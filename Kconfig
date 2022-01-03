@@ -14,7 +14,8 @@ if TOUCHSCREEN_GOODIX_BRL
 
 config TOUCHSCREEN_GOODIX_BRL_SPI
 	bool "support SPI bus connection"
+	depends on SPI_MASTER
 	help
-		Say Y here if the touchscreen is connected via SPI bus.
+	  Say Y here if the touchscreen is connected via SPI bus.
 
 endif
