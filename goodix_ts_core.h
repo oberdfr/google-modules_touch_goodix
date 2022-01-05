@@ -125,6 +125,11 @@ enum CHECKSUM_MODE {
 	CHECKSUM_MODE_U16_LE,
 };
 
+enum PINCTRL_MODE {
+	PINCTRL_MODE_ACTIVE,
+	PINCTRL_MODE_SUSPEND,
+};
+
 #define MAX_SCAN_FREQ_NUM 8
 #define MAX_SCAN_RATE_NUM 8
 #define MAX_FREQ_NUM_STYLUS 8
@@ -292,6 +297,10 @@ struct goodix_ts_board_data {
 	int avdd_gpio;
 	int iovdd_gpio;
 	unsigned int irq_flags;
+
+	struct pinctrl *pinctrl;
+	struct pinctrl_state *state_active;
+	struct pinctrl_state *state_suspend;
 
 	unsigned int swap_axis;
 	unsigned int panel_max_x;

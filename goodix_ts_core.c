@@ -1381,6 +1381,42 @@ static int goodix_ts_gpio_setup(struct goodix_ts_core *core_data)
 	return 0;
 }
 
+static int goodix_pinctrl_init(struct goodix_ts_core *core_data)
+{
+	struct goodix_ts_board_data *ts_bdata = board_data(core_data);
+
+	ts_bdata->pinctrl = devm_pinctrl_get(core_data->bus->dev);
+	ts_bdata->state_active =
+		pinctrl_lookup_state(ts_bdata->pinctrl, "ts_active");
+	if (IS_ERR_OR_NULL(ts_bdata->state_active)) {
+		ts_err("Could not get active pinstate\n");
+		return -ENODEV;
+	}
+
+	ts_bdata->state_suspend =
+		pinctrl_lookup_state(ts_bdata->pinctrl, "ts_suspend");
+	if (IS_ERR_OR_NULL(ts_bdata->state_suspend)) {
+		ts_err("Could not get suspend pinstate\n");
+		return -ENODEV;
+	}
+
+	return 0;
+}
+
+static int goodix_set_pinctrl_state(
+	struct goodix_ts_core *core_data, enum PINCTRL_MODE mode)
+{
+	struct goodix_ts_board_data *ts_bdata = board_data(core_data);
+	struct pinctrl_state *state;
+
+	ts_debug("goodix_set_pinctrl_state: %s\n",
+		mode == PINCTRL_MODE_ACTIVE ? "ACTIVE" : "SUSPEND");
+
+	state = mode == PINCTRL_MODE_ACTIVE ? ts_bdata->state_active
+					    : ts_bdata->state_suspend;
+	return pinctrl_select_state(ts_bdata->pinctrl, state);
+}
+
 /**
  * goodix_ts_input_dev_config - Request and config a input device
  *  then register it to input sybsystem.
@@ -1734,6 +1770,8 @@ static int goodix_ts_suspend(struct goodix_ts_core *core_data)
 	}
 	mutex_unlock(&goodix_modules.mutex);
 
+	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
+
 out:
 	goodix_ts_release_connects(core_data);
 	ts_info("Suspend end");
@@ -1755,6 +1793,8 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
 		return 0;
 
 	ts_info("Resume start");
+	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_ACTIVE);
+
 	atomic_set(&core_data->suspended, 0);
 	hw_ops->irq_enable(core_data, false);
 
@@ -2138,6 +2178,18 @@ static int goodix_ts_probe(struct platform_device *pdev)
 	core_data->pdev = pdev;
 	core_data->bus = bus_interface;
 	platform_set_drvdata(pdev, core_data);
+
+	ret = goodix_pinctrl_init(core_data);
+	if (ret) {
+		ts_err("failed init pinctrl");
+		goto err_out;
+	}
+
+	ret = goodix_set_pinctrl_state(core_data, PINCTRL_MODE_ACTIVE);
+	if (ret) {
+		ts_err("failed set pinctrl state");
+		goto err_out;
+	}
 
 	/* get GPIO resource */
 	ret = goodix_ts_gpio_setup(core_data);
