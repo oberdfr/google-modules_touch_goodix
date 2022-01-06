@@ -167,9 +167,9 @@ static int goodix_parse_cfg_bin(struct goodix_cfg_bin *cfg_bin)
 
 	/*check cfg_bin valid*/
 	checksum = 0;
-	for (i = TS_BIN_VERSION_START_INDEX; i < cfg_bin->bin_data_len; i++) {
+	for (i = TS_BIN_VERSION_START_INDEX; i < cfg_bin->bin_data_len; i++)
 		checksum += cfg_bin->bin_data[i];
-	}
+
 	if (checksum != cfg_bin->head.checksum) {
 		ts_err("cfg_bin checksum check filed 0x%02x != 0x%02x",
 			cfg_bin->head.checksum, checksum);
@@ -180,10 +180,8 @@ static int goodix_parse_cfg_bin(struct goodix_cfg_bin *cfg_bin)
 	cfg_bin->cfg_pkgs = kzalloc(
 		sizeof(struct goodix_cfg_package) * cfg_bin->head.pkg_num,
 		GFP_KERNEL);
-	if (!cfg_bin->cfg_pkgs) {
-		ts_err("cfg_pkgs, allocate memory ERROR");
+	if (!cfg_bin->cfg_pkgs)
 		return -ENOMEM;
-	}
 
 	/*get cfg_pkg's info*/
 	for (i = 0; i < cfg_bin->head.pkg_num; i++) {
@@ -296,8 +294,7 @@ static int goodix_get_reg_and_cfg(
 err_out:
 	/* parse config enter error, release memory alloced */
 	for (i = 0; i < GOODIX_MAX_CONFIG_GROUP; i++) {
-		if (cd->ic_configs[i])
-			kfree(cd->ic_configs[i]);
+		kfree(cd->ic_configs[i]);
 		cd->ic_configs[i] = NULL;
 	}
 	return -EINVAL;

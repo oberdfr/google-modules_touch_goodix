@@ -26,6 +26,8 @@
 #endif
 
 #include "goodix_ts_core.h"
+/* goodix fb test */
+// #include "../../../video/fbdev/core/fb_firefly.h"
 
 #define GOODIX_DEFAULT_CFG_NAME "goodix_cfg_group.cfg"
 #define GOOIDX_INPUT_PHYS "goodix_ts/input0"
@@ -86,8 +88,6 @@ static int __do_register_ext_module(struct goodix_ext_module *module)
 	list_add(&module->list, insert_point->prev);
 	mutex_unlock(&goodix_modules.mutex);
 
-	ts_info("Module [%s] registered,priority:%u", module->name,
-		module->priority);
 	return 0;
 }
 
@@ -133,13 +133,13 @@ int goodix_register_ext_module(struct goodix_ext_module *module)
 	if (!module)
 		return -EINVAL;
 
-	ts_info("goodix_register_ext_module IN");
+	ts_info("IN");
 
 	goodix_core_module_init();
 	INIT_WORK(&module->work, goodix_register_ext_module_work);
 	schedule_work(&module->work);
 
-	ts_info("goodix_register_ext_module OUT");
+	ts_info("OUT");
 	return 0;
 }
 
@@ -151,7 +151,8 @@ int goodix_register_ext_module_no_wait(struct goodix_ext_module *module)
 {
 	if (!module)
 		return -EINVAL;
-	ts_info("goodix_register_ext_module_no_wait IN");
+
+	ts_info("IN");
 	goodix_core_module_init();
 	/* driver probe failed */
 	if (core_module_prob_sate != CORE_MODULE_PROB_SUCCESS) {
@@ -268,7 +269,7 @@ struct kobject *goodix_get_default_kobj(void)
 }
 
 /* show driver information */
-static ssize_t goodix_ts_driver_info_show(
+static ssize_t driver_info_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return snprintf(
@@ -276,18 +277,19 @@ static ssize_t goodix_ts_driver_info_show(
 }
 
 /* show chip infoamtion */
-static ssize_t goodix_ts_chip_info_show(
+static ssize_t chip_info_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
-	struct goodix_ts_core *core_data = dev_get_drvdata(dev);
-	struct goodix_ts_hw_ops *hw_ops = core_data->hw_ops;
+	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
 	struct goodix_fw_version chip_ver;
+	struct goodix_ic_info ic_info;
 	u8 temp_pid[8] = { 0 };
 	int ret;
 	int cnt = -EINVAL;
 
 	if (hw_ops->read_version) {
-		ret = hw_ops->read_version(core_data, &chip_ver);
+		ret = hw_ops->read_version(cd, &chip_ver);
 		if (!ret) {
 			memcpy(temp_pid, chip_ver.rom_pid,
 				sizeof(chip_ver.rom_pid));
@@ -306,13 +308,13 @@ static ssize_t goodix_ts_chip_info_show(
 	}
 
 	if (hw_ops->get_ic_info) {
-		ret = hw_ops->get_ic_info(core_data, &core_data->ic_info);
+		ret = hw_ops->get_ic_info(cd, &ic_info);
 		if (!ret) {
 			cnt += snprintf(&buf[cnt], PAGE_SIZE, "config_id:%x\n",
-				core_data->ic_info.version.config_id);
+				ic_info.version.config_id);
 			cnt += snprintf(&buf[cnt], PAGE_SIZE,
 				"config_version:%x\n",
-				core_data->ic_info.version.config_version);
+				ic_info.version.config_version);
 		}
 	}
 
@@ -334,7 +336,7 @@ static ssize_t goodix_ts_reset_store(struct device *dev,
 }
 
 /* read config */
-static ssize_t goodix_ts_read_cfg_show(
+static ssize_t read_cfg_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct goodix_ts_core *core_data = dev_get_drvdata(dev);
@@ -409,8 +411,7 @@ static int goodix_ts_convert_0x_data(
 			continue;
 
 		if (temp_index >= m_size) {
-			ts_err("exchange cfg data error, overflow,"
-			       "temp_index:%d,m_size:%d",
+			ts_err("exchange cfg data error, overflow, temp_index:%d,m_size:%d",
 				temp_index, m_size);
 			return -EINVAL;
 		}
@@ -434,13 +435,9 @@ static ssize_t goodix_ts_send_cfg_store(struct device *dev,
 	struct goodix_ts_hw_ops *hw_ops = core_data->hw_ops;
 	struct goodix_ic_config *config = NULL;
 	const struct firmware *cfg_img = NULL;
-	int en;
 	int ret;
 
-	if (sscanf(buf, "%d", &en) != 1)
-		return -EINVAL;
-
-	if (en != 1)
+	if (buf[0] != '1')
 		return -EINVAL;
 
 	hw_ops->irq_enable(core_data, false);
@@ -720,11 +717,11 @@ static ssize_t goodix_ts_debug_log_store(struct device *dev,
 	return count;
 }
 
-static DEVICE_ATTR(driver_info, 0444, goodix_ts_driver_info_show, NULL);
-static DEVICE_ATTR(chip_info, 0444, goodix_ts_chip_info_show, NULL);
+static DEVICE_ATTR(driver_info, 0440, driver_info_show, NULL);
+static DEVICE_ATTR(chip_info, 0440, chip_info_show, NULL);
 static DEVICE_ATTR(reset, 0220, NULL, goodix_ts_reset_store);
 static DEVICE_ATTR(send_cfg, 0220, NULL, goodix_ts_send_cfg_store);
-static DEVICE_ATTR(read_cfg, 0444, goodix_ts_read_cfg_show, NULL);
+static DEVICE_ATTR(read_cfg, 0440, read_cfg_show, NULL);
 static DEVICE_ATTR(reg_rw, 0664, goodix_ts_reg_rw_show, goodix_ts_reg_rw_store);
 static DEVICE_ATTR(
 	irq_info, 0664, goodix_ts_irq_info_show, goodix_ts_irq_info_store);
@@ -779,16 +776,12 @@ static int rawdata_proc_show(struct seq_file *m, void *v)
 	int i;
 	int index;
 
-	if (!m || !v || !cd) {
-		ts_err("rawdata_proc_show, input null ptr");
+	if (!m || !v || !cd)
 		return -EIO;
-	}
 
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
-	if (!info) {
-		ts_err("Failed to alloc rawdata info memory");
+	if (!info)
 		return -ENOMEM;
-	}
 
 	ret = cd->hw_ops->get_capacitance_data(cd, info);
 	if (ret < 0) {
@@ -799,19 +792,19 @@ static int rawdata_proc_show(struct seq_file *m, void *v)
 	rx = info->buff[0];
 	tx = info->buff[1];
 	seq_printf(m, "TX:%d  RX:%d\n", tx, rx);
-	seq_printf(m, "mutual_rawdata:\n");
+	seq_puts(m, "mutual_rawdata:\n");
 	index = 2;
 	for (i = 0; i < tx * rx; i++) {
 		seq_printf(m, "%5d,", info->buff[index + i]);
 		if ((i + 1) % tx == 0)
-			seq_printf(m, "\n");
+			seq_puts(m, "\n");
 	}
-	seq_printf(m, "mutual_diffdata:\n");
+	seq_puts(m, "mutual_diffdata:\n");
 	index += tx * rx;
 	for (i = 0; i < tx * rx; i++) {
 		seq_printf(m, "%3d,", info->buff[index + i]);
 		if ((i + 1) % tx == 0)
-			seq_printf(m, "\n");
+			seq_puts(m, "\n");
 	}
 
 exit:
@@ -825,23 +818,39 @@ static int rawdata_proc_open(struct inode *inode, struct file *file)
 		file, rawdata_proc_show, PDE_DATA(inode), PAGE_SIZE * 10);
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
 static const struct proc_ops rawdata_proc_fops = {
 	.proc_open = rawdata_proc_open,
 	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
 };
+#else
+static const struct file_operations rawdata_proc_fops = {
+	.open = rawdata_proc_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif
 
 static void goodix_ts_procfs_init(struct goodix_ts_core *core_data)
 {
+	struct proc_dir_entry *proc_entry;
+
 	if (!proc_mkdir("goodix_ts", NULL))
 		return;
-	proc_create_data("goodix_ts/tp_capacitance_data", 0666, NULL,
-		&rawdata_proc_fops, core_data);
+	proc_entry = proc_create_data("goodix_ts/tp_capacitance_data", 0664,
+		NULL, &rawdata_proc_fops, core_data);
+	if (!proc_entry)
+		ts_err("failed to create proc entry");
+
+	driver_test_proc_init(core_data);
 }
 
 static void goodix_ts_procfs_exit(struct goodix_ts_core *core_data)
 {
+	driver_test_proc_remove();
 	remove_proc_entry("goodix_ts/tp_capacitance_data", NULL);
 	remove_proc_entry("goodix_ts", NULL);
 }
@@ -881,7 +890,7 @@ int goodix_ts_blocking_notify(enum ts_notify_event evt, void *v)
 	return ret;
 }
 
-#ifdef CONFIG_OF
+#if IS_ENABLED(CONFIG_OF)
 /**
  * goodix_parse_dt_resolution - parse resolution from dt
  * @node: devicetree node
@@ -1041,15 +1050,18 @@ static int goodix_parse_dt(
 		return r;
 	}
 
+	/* get sleep mode flag */
+	board_data->sleep_enable =
+		of_property_read_bool(node, "goodix,sleep-enable");
+
 	/*get pen-enable switch and pen keys, must after "key map"*/
 	board_data->pen_enable =
 		of_property_read_bool(node, "goodix,pen-enable");
-	if (board_data->pen_enable)
-		ts_info("goodix pen enabled");
 
-	ts_debug("[DT]x:%d, y:%d, w:%d, p:%d", board_data->panel_max_x,
-		board_data->panel_max_y, board_data->panel_max_w,
-		board_data->panel_max_p);
+	ts_info("[DT]x:%d, y:%d, w:%d, p:%d sleep_enable:%d pen_enable:%d",
+		board_data->panel_max_x, board_data->panel_max_y,
+		board_data->panel_max_w, board_data->panel_max_p,
+		board_data->sleep_enable, board_data->pen_enable);
 	return 0;
 }
 #endif
@@ -1067,6 +1079,10 @@ static void goodix_ts_report_pen(
 		input_report_abs(dev, ABS_X, pen_data->coords.x);
 		input_report_abs(dev, ABS_Y, pen_data->coords.y);
 		input_report_abs(dev, ABS_PRESSURE, pen_data->coords.p);
+		if (pen_data->coords.p == 0)
+			input_report_abs(dev, ABS_DISTANCE, 1);
+		else
+			input_report_abs(dev, ABS_DISTANCE, 0);
 		input_report_abs(dev, ABS_TILT_X, pen_data->coords.tilt_x);
 		input_report_abs(dev, ABS_TILT_Y, pen_data->coords.tilt_y);
 		ts_debug(
@@ -1102,7 +1118,7 @@ static void goodix_ts_report_finger(
 
 	for (i = 0; i < GOODIX_MAX_TOUCH; i++) {
 		if (touch_data->coords[i].status == TS_TOUCH) {
-			ts_debug("report: id %d, x %d, y %d, w %d", i,
+			ts_debug("report: id[%d], x %d, y %d, w %d", i,
 				touch_data->coords[i].x,
 				touch_data->coords[i].y,
 				touch_data->coords[i].w);
@@ -1193,14 +1209,9 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 			goodix_ts_report_pen(
 				core_data->pen_dev, &ts_event->pen_data);
 		}
-		if (ts_event->event_type == EVENT_REQUEST) {
+		if (ts_event->event_type == EVENT_REQUEST)
 			goodix_ts_request_handle(core_data, ts_event);
-		}
 	}
-
-	if (!core_data->tools_ctrl_sync && !ts_event->retry)
-		hw_ops->after_event_handler(core_data);
-	ts_event->retry = 0;
 
 	return IRQ_HANDLED;
 }
@@ -1397,15 +1408,12 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 	input_dev->id.vendor = 0xBEEF;
 	input_dev->id.version = 10427;
 
-	__set_bit(EV_SYN, input_dev->evbit);
-	__set_bit(EV_KEY, input_dev->evbit);
-	__set_bit(EV_ABS, input_dev->evbit);
-	__set_bit(BTN_TOUCH, input_dev->keybit);
-	__set_bit(BTN_TOOL_FINGER, input_dev->keybit);
-
-#ifdef INPUT_PROP_DIRECT
-	__set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
-#endif
+	set_bit(EV_SYN, input_dev->evbit);
+	set_bit(EV_KEY, input_dev->evbit);
+	set_bit(EV_ABS, input_dev->evbit);
+	set_bit(BTN_TOUCH, input_dev->keybit);
+	set_bit(BTN_TOOL_FINGER, input_dev->keybit);
+	set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
 
 	/* set input parameters */
 	input_set_abs_params(
@@ -1423,6 +1431,8 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 #endif
 
 	input_set_capability(input_dev, EV_KEY, KEY_POWER);
+	input_set_capability(input_dev, EV_KEY, KEY_WAKEUP);
+	input_set_capability(input_dev, EV_KEY, KEY_GOTO);
 
 	r = input_register_device(input_dev);
 	if (r < 0) {
@@ -1455,19 +1465,20 @@ static int goodix_ts_pen_dev_config(struct goodix_ts_core *core_data)
 	pen_dev->id.version = 10427;
 
 	pen_dev->evbit[0] |= BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS);
-	__set_bit(ABS_X, pen_dev->absbit);
-	__set_bit(ABS_Y, pen_dev->absbit);
-	__set_bit(ABS_TILT_X, pen_dev->absbit);
-	__set_bit(ABS_TILT_Y, pen_dev->absbit);
-	__set_bit(BTN_STYLUS, pen_dev->keybit);
-	__set_bit(BTN_STYLUS2, pen_dev->keybit);
-	__set_bit(BTN_TOUCH, pen_dev->keybit);
-	__set_bit(BTN_TOOL_PEN, pen_dev->keybit);
-	__set_bit(INPUT_PROP_DIRECT, pen_dev->propbit);
+	set_bit(ABS_X, pen_dev->absbit);
+	set_bit(ABS_Y, pen_dev->absbit);
+	set_bit(ABS_TILT_X, pen_dev->absbit);
+	set_bit(ABS_TILT_Y, pen_dev->absbit);
+	set_bit(BTN_STYLUS, pen_dev->keybit);
+	set_bit(BTN_STYLUS2, pen_dev->keybit);
+	set_bit(BTN_TOUCH, pen_dev->keybit);
+	set_bit(BTN_TOOL_PEN, pen_dev->keybit);
+	set_bit(INPUT_PROP_DIRECT, pen_dev->propbit);
 	input_set_abs_params(pen_dev, ABS_X, 0, ts_bdata->panel_max_x, 0, 0);
 	input_set_abs_params(pen_dev, ABS_Y, 0, ts_bdata->panel_max_y, 0, 0);
 	input_set_abs_params(
 		pen_dev, ABS_PRESSURE, 0, ts_bdata->panel_max_p, 0, 0);
+	input_set_abs_params(pen_dev, ABS_DISTANCE, 0, 255, 0, 0);
 	input_set_abs_params(pen_dev, ABS_TILT_X, -GOODIX_PEN_MAX_TILT,
 		GOODIX_PEN_MAX_TILT, 0, 0);
 	input_set_abs_params(pen_dev, ABS_TILT_Y, -GOODIX_PEN_MAX_TILT,
@@ -1553,9 +1564,9 @@ static void goodix_ts_esd_on(struct goodix_ts_core *cd)
 		return;
 
 	atomic_set(&ts_esd->esd_on, 1);
-	if (!schedule_delayed_work(&ts_esd->esd_work, 2 * HZ)) {
+	if (!schedule_delayed_work(&ts_esd->esd_work, 2 * HZ))
 		ts_info("esd work already in workqueue");
-	}
+
 	ts_info("esd on");
 }
 
@@ -1652,7 +1663,7 @@ static void goodix_ts_release_connects(struct goodix_ts_core *core_data)
 
 /**
  * goodix_ts_suspend - Touchscreen suspend function
- * Called by PM/FB/EARLYSUSPEN module to put the device to  sleep
+ * Called by PM/FB/EARLYSUSPEN module to put the device to sleep
  */
 static int goodix_ts_suspend(struct goodix_ts_core *core_data)
 {
@@ -1697,8 +1708,10 @@ static int goodix_ts_suspend(struct goodix_ts_core *core_data)
 	mutex_unlock(&goodix_modules.mutex);
 
 	/* enter sleep mode or power off */
-	if (hw_ops->suspend)
+	if (core_data->board_data.sleep_enable)
 		hw_ops->suspend(core_data);
+	else
+		goodix_ts_power_off(core_data);
 
 	/* inform exteranl modules */
 	mutex_lock(&goodix_modules.mutex);
@@ -1743,6 +1756,7 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
 
 	ts_info("Resume start");
 	atomic_set(&core_data->suspended, 0);
+	hw_ops->irq_enable(core_data, false);
 
 	mutex_lock(&goodix_modules.mutex);
 	if (!list_empty(&goodix_modules.head)) {
@@ -1765,8 +1779,10 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
 	mutex_unlock(&goodix_modules.mutex);
 
 	/* reset device or power on*/
-	if (hw_ops->resume)
+	if (core_data->board_data.sleep_enable)
 		hw_ops->resume(core_data);
+	else
+		goodix_ts_power_on(core_data);
 
 	mutex_lock(&goodix_modules.mutex);
 	if (!list_empty(&goodix_modules.head)) {
@@ -1797,7 +1813,7 @@ out:
 	return 0;
 }
 
-#ifdef CONFIG_FB
+#if IS_ENABLED(CONFIG_FB)
 /**
  * goodix_ts_fb_notifier_callback - Framebuffer notifier callback
  * Called by kernel during framebuffer blanck/unblank phrase
@@ -1810,10 +1826,9 @@ int goodix_ts_fb_notifier_callback(
 	struct fb_event *fb_event = data;
 
 	if (fb_event && fb_event->data && core_data) {
-		if (event == FB_EARLY_EVENT_BLANK) {
-			/* before fb blank */
-		} else if (event == FB_EVENT_BLANK) {
+		if (event == FB_EVENT_BLANK) {
 			int *blank = fb_event->data;
+
 			if (*blank == FB_BLANK_UNBLANK)
 				goodix_ts_resume(core_data);
 			else if (*blank == FB_BLANK_POWERDOWN)
@@ -1825,8 +1840,8 @@ int goodix_ts_fb_notifier_callback(
 }
 #endif
 
-#ifdef CONFIG_PM
-#if !defined(CONFIG_FB) && !defined(CONFIG_HAS_EARLYSUSPEND)
+#if IS_ENABLED(CONFIG_PM)
+#if !IS_ENABLED(CONFIG_FB) && !IS_ENABLED(CONFIG_HAS_EARLYSUSPEND)
 /**
  * goodix_ts_pm_suspend - PM suspend function
  * Called by kernel during system suspend phrase
@@ -1907,7 +1922,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	}
 	ts_info("success register irq");
 
-#ifdef CONFIG_FB
+#if IS_ENABLED(CONFIG_FB)
 	cd->fb_notifier.notifier_call = goodix_ts_fb_notifier_callback;
 	if (fb_register_client(&cd->fb_notifier))
 		ts_err("Failed to register fb notifier client:%d", ret);
@@ -2042,8 +2057,7 @@ err_out:
 	ts_err("stage2 init failed");
 	cd->init_stage = CORE_INIT_FAIL;
 	for (i = 0; i < GOODIX_MAX_CONFIG_GROUP; i++) {
-		if (cd->ic_configs[i])
-			kfree(cd->ic_configs[i]);
+		kfree(cd->ic_configs[i]);
 		cd->ic_configs[i] = NULL;
 	}
 	return ret;
@@ -2063,6 +2077,17 @@ static int goodix_start_later_init(struct goodix_ts_core *ts_core)
 	return 0;
 }
 
+/* goodix fb test */
+// static void test_suspend(void)
+// {
+// 	goodix_ts_suspend(goodix_modules.core_data);
+// }
+
+// static void test_resume(void)
+// {
+// 	goodix_ts_resume(goodix_modules.core_data);
+// }
+
 /**
  * goodix_ts_probe - called by kernel when Goodix touch
  *  platform driver is added.
@@ -2073,7 +2098,7 @@ static int goodix_ts_probe(struct platform_device *pdev)
 	struct goodix_bus_interface *bus_interface;
 	int ret;
 
-	ts_info("goodix_ts_probe IN");
+	ts_info("IN");
 
 	bus_interface = pdev->dev.platform_data;
 	if (!bus_interface) {
@@ -2085,7 +2110,6 @@ static int goodix_ts_probe(struct platform_device *pdev)
 	core_data = devm_kzalloc(
 		&pdev->dev, sizeof(struct goodix_ts_core), GFP_KERNEL);
 	if (!core_data) {
-		ts_err("Failed to allocate memory for core data");
 		core_module_prob_sate = CORE_MODULE_PROB_FAILED;
 		return -ENOMEM;
 	}
@@ -2141,6 +2165,9 @@ static int goodix_ts_probe(struct platform_device *pdev)
 	/* debug node init */
 	goodix_tools_init();
 
+	/* goodix fb test */
+	// fb_firefly_register(test_suspend, test_resume);
+
 	core_data->init_stage = CORE_INIT_STAGE1;
 	goodix_modules.core_data = core_data;
 	core_module_prob_sate = CORE_MODULE_PROB_SUCCESS;
@@ -2171,7 +2198,7 @@ static int goodix_ts_remove(struct platform_device *pdev)
 		gesture_module_exit();
 		inspect_module_exit();
 		hw_ops->irq_enable(core_data, false);
-#ifdef CONFIG_FB
+#if IS_ENABLED(CONFIG_FB)
 		fb_unregister_client(&core_data->fb_notifier);
 #endif
 		core_module_prob_sate = CORE_MODULE_REMOVED;
@@ -2190,9 +2217,9 @@ static int goodix_ts_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#if IS_ENABLED(CONFIG_PM)
 static const struct dev_pm_ops dev_pm_ops = {
-#if !defined(CONFIG_FB) && !defined(CONFIG_HAS_EARLYSUSPEND)
+#if !IS_ENABLED(CONFIG_FB) && !IS_ENABLED(CONFIG_HAS_EARLYSUSPEND)
 	.suspend = goodix_ts_pm_suspend,
 	.resume = goodix_ts_pm_resume,
 #endif
@@ -2208,7 +2235,7 @@ static struct platform_driver goodix_ts_driver = {
 	.driver = {
 		.name = GOODIX_CORE_DRIVER_NAME,
 		.owner = THIS_MODULE,
-#ifdef CONFIG_PM
+#if IS_ENABLED(CONFIG_PM)
 		.pm = &dev_pm_ops,
 #endif
 	},

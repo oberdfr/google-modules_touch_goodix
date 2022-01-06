@@ -16,7 +16,6 @@
  */
 #include "goodix_ts_core.h"
 #include <linux/atomic.h>
-#include <linux/compat.h>
 #include <linux/fs.h>
 #include <linux/ioctl.h>
 #include <linux/kernel.h>

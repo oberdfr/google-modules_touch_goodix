@@ -159,11 +159,8 @@ static int goodix_spi_write(struct device *dev, unsigned int addr,
 	int ret = 0;
 
 	tx_buf = kzalloc(SPI_WRITE_PREFIX_LEN + len, GFP_KERNEL);
-	if (!tx_buf) {
-		ts_err("alloc tx_buf failed, size:%d",
-			SPI_WRITE_PREFIX_LEN + len);
+	if (!tx_buf)
 		return -ENOMEM;
-	}
 
 	spi_message_init(&spi_msg);
 	memset(&xfers, 0, sizeof(xfers));
@@ -209,7 +206,7 @@ static int goodix_spi_probe(struct spi_device *spi)
 	}
 
 	/* get ic type */
-	ret = goodix_get_ic_type(spi->dev.of_node);
+	ret = goodix_get_ic_type(spi->dev.of_node, &goodix_spi_bus);
 	if (ret < 0)
 		return ret;
 
@@ -264,16 +261,16 @@ static int goodix_spi_remove(struct spi_device *spi)
 #ifdef CONFIG_OF
 static const struct of_device_id spi_matches[] = {
 	{
-		.compatible = "goodix,gt9897S",
+		.compatible = "goodix,brl-a",
 	},
 	{
-		.compatible = "goodix,gt9897T",
+		.compatible = "goodix,brl-b",
 	},
 	{
-		.compatible = "goodix,gt9966S",
+		.compatible = "goodix,brl-d",
 	},
 	{
-		.compatible = "goodix,gt9916S",
+		.compatible = "goodix,nottingham",
 	},
 	{},
 };

@@ -173,7 +173,7 @@ static int goodix_i2c_probe(
 		return -EIO;
 
 	/* get ic type */
-	ret = goodix_get_ic_type(client->dev.of_node);
+	ret = goodix_get_ic_type(client->dev.of_node, &goodix_i2c_bus);
 	if (ret < 0)
 		return ret;
 
@@ -225,13 +225,16 @@ static int goodix_i2c_remove(struct i2c_client *client)
 #ifdef CONFIG_OF
 static const struct of_device_id i2c_matches[] = {
 	{
-		.compatible = "goodix,gt9897",
+		.compatible = "goodix,brl-a",
 	},
 	{
-		.compatible = "goodix,gt9966",
+		.compatible = "goodix,brl-b",
 	},
 	{
-		.compatible = "goodix,gt9916",
+		.compatible = "goodix,brl-d",
+	},
+	{
+		.compatible = "goodix,nottingham",
 	},
 	{},
 };

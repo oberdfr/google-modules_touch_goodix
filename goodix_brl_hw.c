@@ -65,8 +65,7 @@ static int brl_select_spi_mode(struct goodix_ts_core *cd)
 		if (!ret && r_value == w_value)
 			return 0;
 	}
-	ts_err("failed switch SPI mode after reset, ret:%d r_value:%02x", ret,
-		r_value);
+	ts_err("failed switch SPI mode, ret:%d r_value:%02x", ret, r_value);
 	return -EINVAL;
 }
 
@@ -93,8 +92,8 @@ static int brl_dev_confirm(struct goodix_ts_core *cd)
 	}
 
 	if (retry < 0) {
-		ret = -EINVAL;
 		ts_err("device confirm failed, rx_buf:%*ph", 8, rx_buf);
+		return -EINVAL;
 	}
 
 	ts_info("device connected");
@@ -254,17 +253,12 @@ power_off:
 	return ret;
 }
 
-#define GOODIX_SLEEP_CMD 0x84
 int brl_suspend(struct goodix_ts_core *cd)
 {
-	struct goodix_ts_cmd sleep_cmd;
+	u32 cmd_reg = cd->ic_info.misc.cmd_addr;
+	u8 sleep_cmd[] = { 0x00, 0x00, 0x04, 0x84, 0x88, 0x00 };
 
-	sleep_cmd.cmd = GOODIX_SLEEP_CMD;
-	sleep_cmd.len = 4;
-	if (cd->hw_ops->send_cmd(cd, &sleep_cmd))
-		ts_err("failed send sleep cmd");
-
-	return 0;
+	return cd->hw_ops->write(cd, cmd_reg, sleep_cmd, sizeof(sleep_cmd));
 }
 
 int brl_resume(struct goodix_ts_core *cd)
@@ -272,12 +266,16 @@ int brl_resume(struct goodix_ts_core *cd)
 	return cd->hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
 }
 
-#define GOODIX_GESTURE_CMD 0x12
+#define GOODIX_GESTURE_CMD_BA 0x12
+#define GOODIX_GESTURE_CMD 0xA6
 int brl_gesture(struct goodix_ts_core *cd, int gesture_type)
 {
 	struct goodix_ts_cmd cmd;
 
-	cmd.cmd = GOODIX_GESTURE_CMD;
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_A)
+		cmd.cmd = GOODIX_GESTURE_CMD_BA;
+	else
+		cmd.cmd = GOODIX_GESTURE_CMD;
 	cmd.len = 5;
 	cmd.data[0] = gesture_type;
 	if (cd->hw_ops->send_cmd(cd, &cmd))
@@ -373,7 +371,7 @@ static int brl_send_cmd(struct goodix_ts_core *cd, struct goodix_ts_cmd *cmd)
 			ts_debug("cmd ack data %*ph", (int)sizeof(cmd_ack),
 				cmd_ack.buf);
 			if (cmd_ack.ack == CMD_ACK_OK) {
-				usleep_range(2000, 2100);
+				msleep(40); // wait for cmd response
 				return 0;
 			}
 			if (cmd_ack.ack == CMD_ACK_BUSY ||
@@ -960,6 +958,7 @@ static int brl_esd_check(struct goodix_ts_core *cd)
 #define GOODIX_TOUCH_EVENT 0x80
 #define GOODIX_REQUEST_EVENT 0x40
 #define GOODIX_GESTURE_EVENT 0x20
+#define GOODIX_FP_EVENT 0x08
 #define POINT_TYPE_STYLUS_HOVER 0x01
 #define POINT_TYPE_STYLUS 0x03
 
@@ -1064,6 +1063,9 @@ static int goodix_touch_handler(struct goodix_ts_core *cd,
 		}
 	}
 
+	/* read done */
+	hw_ops->after_event_handler(cd);
+
 	if (touch_num > 0) {
 		point_type = buffer[IRQ_EVENT_HEAD_LEN] & 0x0F;
 		if (point_type == POINT_TYPE_STYLUS ||
@@ -1089,6 +1091,8 @@ static int goodix_touch_handler(struct goodix_ts_core *cd,
 			}
 		}
 	}
+
+	ts_event->fp_flag = pre_buf[0] & GOODIX_FP_EVENT;
 
 	if (touch_num > 0 && (point_type == POINT_TYPE_STYLUS ||
 				     point_type == POINT_TYPE_STYLUS_HOVER)) {
@@ -1140,10 +1144,14 @@ static int brl_event_handler(
 		return ret;
 	}
 
+	if (pre_buf[0] == 0x00) {
+		ts_debug("invalid touch head");
+		return -EINVAL;
+	}
+
 	if (checksum_cmp(pre_buf, IRQ_EVENT_HEAD_LEN, CHECKSUM_MODE_U8_LE)) {
-		ts_debug("touch head checksum err");
-		ts_debug("touch_head %*ph", IRQ_EVENT_HEAD_LEN, pre_buf);
-		ts_event->retry = 1;
+		ts_debug("touch head checksum err[%*ph]", IRQ_EVENT_HEAD_LEN,
+			pre_buf);
 		return -EINVAL;
 	}
 
@@ -1161,10 +1169,16 @@ static int brl_event_handler(
 		else
 			ts_debug("unsupported request code 0x%x", pre_buf[2]);
 	}
+
 	if (event_status & GOODIX_GESTURE_EVENT) {
 		ts_event->event_type = EVENT_GESTURE;
 		ts_event->gesture_type = pre_buf[4];
+		memcpy(ts_event->gesture_data, &pre_buf[8],
+			GOODIX_GESTURE_DATA_LEN);
 	}
+	/* read done */
+	hw_ops->after_event_handler(cd);
+
 	return 0;
 }
 
@@ -1174,6 +1188,8 @@ static int brl_after_event_handler(struct goodix_ts_core *cd)
 	struct goodix_ic_info_misc *misc = &cd->ic_info.misc;
 	u8 sync_clean = 0;
 
+	if (cd->tools_ctrl_sync)
+		return 0;
 	return hw_ops->write(cd, misc->touch_data_addr, &sync_clean, 1);
 }
 
@@ -1318,7 +1334,8 @@ static int brl_get_capacitance_data(
 		return -EIO;
 	}
 
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_D)
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_D ||
+		cd->bus->ic_type == IC_TYPE_NOTTINGHAM)
 		return brld_get_cap_data(cd, info);
 
 	/* disable irq & close esd */
