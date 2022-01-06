@@ -261,7 +261,7 @@ struct fw_update_ctrl {
 	struct goodix_ts_core *core_data;
 	struct update_info_t *update_info;
 
-	struct bin_attribute attr_fwimage;
+	struct attribute_group attrs;
 	struct kobject *kobj;
 };
 static struct fw_update_ctrl goodix_fw_update_ctrl;
@@ -995,7 +995,7 @@ err_fw_prepare:
  *       '5'[101] update in unblocking mode with fwdata from sysfs
  *       '6'[110] update in unblocking mode with fwdata from request
  */
-static ssize_t goodix_sysfs_update_en_store(struct device *dev,
+static ssize_t update_en_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	int ret = 0;
@@ -1036,9 +1036,8 @@ static ssize_t goodix_sysfs_update_en_store(struct device *dev,
 	return -EINVAL;
 }
 
-static ssize_t goodix_sysfs_fwimage_store(struct file *file,
-	struct kobject *kobj, struct bin_attribute *attr, char *buf, loff_t pos,
-	size_t count)
+static ssize_t fwimage_write(struct file *file, struct kobject *kobj,
+	struct bin_attribute *attr, char *buf, loff_t pos, size_t count)
 {
 	struct firmware **fw = &goodix_fw_update_ctrl.fw_data.fw_sysfs;
 
@@ -1063,7 +1062,7 @@ static ssize_t goodix_sysfs_fwimage_store(struct file *file,
 }
 
 /* return fw_update result */
-static ssize_t goodix_sysfs_result_show(
+static ssize_t result_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct fw_update_ctrl *fw_ctrl = &goodix_fw_update_ctrl;
@@ -1098,16 +1097,25 @@ static ssize_t goodix_sysfs_result_show(
 	return r;
 }
 
-static DEVICE_ATTR(update_en, 0220, NULL, goodix_sysfs_update_en_store);
-static DEVICE_ATTR(result, 0664, goodix_sysfs_result_show, NULL);
+static DEVICE_ATTR_WO(update_en);
+static DEVICE_ATTR_RO(result);
 
-static struct attribute *goodix_fwu_attrs[] = { &dev_attr_update_en.attr,
-	&dev_attr_result.attr };
+static struct attribute *goodix_attrs[] = {
+	&dev_attr_update_en.attr,
+	&dev_attr_result.attr,
+	NULL,
+};
+
+static BIN_ATTR_WO(fwimage, 0);
+static struct bin_attribute *goodix_bin_attrs[] = {
+	&bin_attr_fwimage,
+	NULL,
+};
 
 static int goodix_fw_sysfs_init(
 	struct goodix_ts_core *core_data, struct fw_update_ctrl *fw_ctrl)
 {
-	int ret = 0, i;
+	int ret = 0;
 
 	fw_ctrl->kobj =
 		kobject_create_and_add("fwupdate", &core_data->pdev->dev.kobj);
@@ -1116,28 +1124,13 @@ static int goodix_fw_sysfs_init(
 		return -EINVAL;
 	}
 
-	for (i = 0; i < ARRAY_SIZE(goodix_fwu_attrs) && !ret; i++)
-		ret = sysfs_create_file(fw_ctrl->kobj, goodix_fwu_attrs[i]);
-
+	fw_ctrl->attrs.attrs = goodix_attrs;
+	fw_ctrl->attrs.bin_attrs = goodix_bin_attrs;
+	ret = sysfs_create_group(fw_ctrl->kobj, &fw_ctrl->attrs);
 	if (ret) {
-		ts_err("failed create fwu sysfs files");
-		while (--i >= 0)
-			sysfs_remove_file(fw_ctrl->kobj, goodix_fwu_attrs[i]);
-
+		ts_err("Cannot create sysfs structure!\n");
 		kobject_put(fw_ctrl->kobj);
-		return -EINVAL;
-	}
-
-	fw_ctrl->attr_fwimage.attr.name = "fwimage";
-	fw_ctrl->attr_fwimage.attr.mode = 0664;
-	fw_ctrl->attr_fwimage.size = 0;
-	fw_ctrl->attr_fwimage.write = goodix_sysfs_fwimage_store;
-	ret = sysfs_create_bin_file(fw_ctrl->kobj, &fw_ctrl->attr_fwimage);
-	if (ret) {
-		ts_err("failed create fwimage bin node, %d", ret);
-		for (i = 0; i < ARRAY_SIZE(goodix_fwu_attrs); i++)
-			sysfs_remove_file(fw_ctrl->kobj, goodix_fwu_attrs[i]);
-		kobject_put(fw_ctrl->kobj);
+		return -ENODEV;
 	}
 
 	return ret;
@@ -1146,13 +1139,8 @@ static int goodix_fw_sysfs_init(
 static void goodix_fw_sysfs_remove(void)
 {
 	struct fw_update_ctrl *fw_ctrl = &goodix_fw_update_ctrl;
-	int i;
 
-	sysfs_remove_bin_file(fw_ctrl->kobj, &fw_ctrl->attr_fwimage);
-
-	for (i = 0; i < ARRAY_SIZE(goodix_fwu_attrs); i++)
-		sysfs_remove_file(fw_ctrl->kobj, goodix_fwu_attrs[i]);
-
+	sysfs_remove_group(fw_ctrl->kobj, &fw_ctrl->attrs);
 	kobject_put(fw_ctrl->kobj);
 }
 
