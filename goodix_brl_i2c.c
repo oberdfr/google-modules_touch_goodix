@@ -177,7 +177,6 @@ static int goodix_i2c_probe(
 	if (ret < 0)
 		return ret;
 
-	goodix_i2c_bus.ic_type = ret;
 	goodix_i2c_bus.bus_type = GOODIX_BUS_TYPE_I2C;
 	goodix_i2c_bus.dev = &client->dev;
 	goodix_i2c_bus.read = goodix_i2c_read;

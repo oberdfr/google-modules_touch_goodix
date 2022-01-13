@@ -210,7 +210,6 @@ static int goodix_spi_probe(struct spi_device *spi)
 	if (ret < 0)
 		return ret;
 
-	goodix_spi_bus.ic_type = ret;
 	goodix_spi_bus.bus_type = GOODIX_BUS_TYPE_SPI;
 	goodix_spi_bus.dev = &spi->dev;
 	if (goodix_spi_bus.ic_type == IC_TYPE_BERLIN_A)
