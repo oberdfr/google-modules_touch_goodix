@@ -121,6 +121,10 @@ static int goodix_spi_read(struct device *dev, unsigned int addr,
 	int ret = 0;
 	int buf_len = SPI_READ_PREFIX_LEN - 1 + len;
 
+	if (buf_len >= 64) {
+		buf_len = ALIGN(buf_len, 4);
+	}
+
 	if (buf_len <= SPI_PREALLOC_RX_BUF_SIZE &&
 		buf_len <= SPI_PREALLOC_TX_BUF_SIZE) {
 		rx_buf = goodix_spi_bus.rx_buf;
@@ -158,6 +162,7 @@ static int goodix_spi_read(struct device *dev, unsigned int addr,
 	xfers.rx_buf = rx_buf;
 	xfers.len = buf_len;
 	xfers.cs_change = 0;
+	xfers.bits_per_word = buf_len >= 64 ? 32 : 8;
 	spi_message_add_tail(&xfers, &spi_msg);
 	ret = spi_sync(spi, &spi_msg);
 	if (ret < 0) {
@@ -193,6 +198,10 @@ static int goodix_spi_write(struct device *dev, unsigned int addr,
 	int ret = 0;
 	int buf_len = SPI_WRITE_PREFIX_LEN + len;
 
+	if (buf_len >= 64) {
+		buf_len = ALIGN(buf_len, 4);
+	}
+
 	if (buf_len <= SPI_PREALLOC_TX_BUF_SIZE) {
 		tx_buf = goodix_spi_bus.tx_buf;
 	} else {
@@ -215,6 +224,7 @@ static int goodix_spi_write(struct device *dev, unsigned int addr,
 	xfers.tx_buf = tx_buf;
 	xfers.len = buf_len;
 	xfers.cs_change = 0;
+	xfers.bits_per_word = buf_len >= 64 ? 32 : 8;
 	spi_message_add_tail(&xfers, &spi_msg);
 	ret = spi_sync(spi, &spi_msg);
 	if (ret < 0)
