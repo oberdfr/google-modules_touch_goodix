@@ -834,18 +834,38 @@ static const struct file_operations rawdata_proc_fops = {
 };
 #endif
 
-static void goodix_ts_procfs_init(struct goodix_ts_core *core_data)
+static int goodix_ts_procfs_init(struct goodix_ts_core *core_data)
 {
 	struct proc_dir_entry *proc_entry;
+	int ret = 0;
 
-	if (!proc_mkdir("goodix_ts", NULL))
-		return;
+	proc_entry = proc_mkdir("goodix_ts", NULL);
+	if (proc_entry == NULL) {
+		ts_err("failed to create proc entry: goodix_ts");
+		return -ENOMEM;
+	}
+
 	proc_entry = proc_create_data("goodix_ts/tp_capacitance_data", 0664,
 		NULL, &rawdata_proc_fops, core_data);
-	if (!proc_entry)
-		ts_err("failed to create proc entry");
+	if (proc_entry == NULL) {
+		ts_err("failed to create proc entry: goodix_ts/tp_capacitance_data");
+		ret = -ENOMEM;
+		goto err_create_data;
+	}
 
-	driver_test_proc_init(core_data);
+	ret = driver_test_proc_init(core_data);
+	if (ret != 0) {
+		ts_err("failed to create proc entry: goodix_ts/driver_test");
+		ret = -ENOMEM;
+		goto err_create_driver;
+	}
+	return ret;
+
+err_create_driver:
+	remove_proc_entry("goodix_ts/tp_capacitance_data", NULL);
+err_create_data:
+	remove_proc_entry("goodix_ts", NULL);
+	return ret;
 }
 
 static void goodix_ts_procfs_exit(struct goodix_ts_core *core_data)
@@ -1679,6 +1699,14 @@ int goodix_ts_esd_init(struct goodix_ts_core *cd)
 	return 0;
 }
 
+void goodix_ts_esd_uninit(struct goodix_ts_core *cd)
+{
+	struct goodix_ts_esd *ts_esd = &cd->ts_esd;
+	if (atomic_read(&ts_esd->esd_on))
+		goodix_ts_esd_off(cd);
+	goodix_ts_unregister_notifier(&ts_esd->esd_notifier);
+}
+
 static void goodix_ts_release_connects(struct goodix_ts_core *core_data)
 {
 	struct input_dev *input_dev = core_data->input_dev;
@@ -1954,13 +1982,6 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 			goto err_finger;
 		}
 	}
-	/* request irq line */
-	ret = goodix_ts_irq_setup(cd);
-	if (ret < 0) {
-		ts_info("failed set irq");
-		goto exit;
-	}
-	ts_info("success register irq");
 
 #if IS_ENABLED(CONFIG_FB)
 	cd->fb_notifier.notifier_call = goodix_ts_fb_notifier_callback;
@@ -1968,22 +1989,64 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 		ts_err("Failed to register fb notifier client:%d", ret);
 #endif
 	/* create sysfs files */
-	goodix_ts_sysfs_init(cd);
+	ret = goodix_ts_sysfs_init(cd);
+	if (ret < 0) {
+		ts_err("failed set init sysfs");
+		goto err_init_sysfs;
+	}
 
 	/* create procfs files */
-	goodix_ts_procfs_init(cd);
+	ret = goodix_ts_procfs_init(cd);
+	if (ret < 0) {
+		ts_err("failed set init procfs");
+		goto err_init_procfs;
+	}
 
 	/* esd protector */
-	goodix_ts_esd_init(cd);
+	ret = goodix_ts_esd_init(cd);
+	if (ret < 0) {
+		ts_err("failed set init procfs");
+		goto err_init_esd;
+	}
 
 	/* gesture init */
-	gesture_module_init();
+	ret = gesture_module_init();
+	if (ret < 0) {
+		ts_err("failed set init gesture");
+		goto err_init_gesture;
+	}
 
 	/* inspect init */
-	inspect_module_init();
+	ret = inspect_module_init();
+	if (ret < 0) {
+		ts_err("failed set init inspect");
+		goto err_init_inspect;
+	}
+
+	/* request irq line */
+	ret = goodix_ts_irq_setup(cd);
+	if (ret < 0) {
+		ts_info("failed set irq");
+		goto err_setup_irq;
+	}
+	ts_info("success register irq");
 
 	return 0;
-exit:
+
+err_setup_irq:
+	inspect_module_exit();
+err_init_inspect:
+	gesture_module_exit();
+err_init_gesture:
+	goodix_ts_esd_uninit(cd);
+err_init_esd:
+	goodix_ts_procfs_exit(cd);
+err_init_procfs:
+	goodix_ts_sysfs_exit(cd);
+err_init_sysfs:
+#if IS_ENABLED(CONFIG_FB)
+	fb_unregister_client(&cd->fb_notifier);
+#endif
 	goodix_ts_pen_dev_remove(cd);
 err_finger:
 	goodix_ts_input_dev_remove(cd);
@@ -2195,19 +2258,19 @@ static int goodix_ts_probe(struct platform_device *pdev)
 	ret = goodix_ts_gpio_setup(core_data);
 	if (ret) {
 		ts_err("failed init gpio");
-		goto err_out;
+		goto err_setup_gpio;
 	}
 
 	ret = goodix_ts_power_init(core_data);
 	if (ret) {
 		ts_err("failed init power");
-		goto err_out;
+		goto err_setup_gpio;
 	}
 
 	ret = goodix_ts_power_on(core_data);
 	if (ret) {
 		ts_err("failed power on");
-		goto err_out;
+		goto err_setup_gpio;
 	}
 
 	/* generic notifier callback */
@@ -2215,7 +2278,11 @@ static int goodix_ts_probe(struct platform_device *pdev)
 	goodix_ts_register_notifier(&core_data->ts_notifier);
 
 	/* debug node init */
-	goodix_tools_init();
+	ret = goodix_tools_init();
+	if (ret) {
+		ts_err("failed init tools");
+		goto err_init_tools;
+	}
 
 	/* goodix fb test */
 	// fb_firefly_register(test_suspend, test_resume);
@@ -2225,11 +2292,22 @@ static int goodix_ts_probe(struct platform_device *pdev)
 	core_module_prob_sate = CORE_MODULE_PROB_SUCCESS;
 
 	/* Try start a thread to get config-bin info */
-	goodix_start_later_init(core_data);
+	ret = goodix_start_later_init(core_data);
+	if (ret) {
+		ts_err("failed start late init");
+		goto err_start_late_init;
+	}
 
 	ts_info("goodix_ts_core probe success");
 	return 0;
 
+err_start_late_init:
+	goodix_tools_exit();
+err_init_tools:
+	goodix_ts_unregister_notifier(&core_data->ts_notifier);
+	goodix_ts_power_off(core_data);
+err_setup_gpio:
+	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
 err_out:
 	core_data->init_stage = CORE_INIT_FAIL;
 	core_module_prob_sate = CORE_MODULE_PROB_FAILED;
@@ -2241,10 +2319,11 @@ static int goodix_ts_remove(struct platform_device *pdev)
 {
 	struct goodix_ts_core *core_data = platform_get_drvdata(pdev);
 	struct goodix_ts_hw_ops *hw_ops = core_data->hw_ops;
-	struct goodix_ts_esd *ts_esd = &core_data->ts_esd;
 
 	goodix_ts_unregister_notifier(&core_data->ts_notifier);
 	goodix_tools_exit();
+	goodix_ts_power_off(core_data);
+	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
 
 	if (core_data->init_stage >= CORE_INIT_STAGE2) {
 		gesture_module_exit();
@@ -2254,9 +2333,7 @@ static int goodix_ts_remove(struct platform_device *pdev)
 		fb_unregister_client(&core_data->fb_notifier);
 #endif
 		core_module_prob_sate = CORE_MODULE_REMOVED;
-		if (atomic_read(&core_data->ts_esd.esd_on))
-			goodix_ts_esd_off(core_data);
-		goodix_ts_unregister_notifier(&ts_esd->esd_notifier);
+		goodix_ts_esd_uninit(core_data);
 
 		goodix_fw_update_uninit();
 		goodix_ts_input_dev_remove(core_data);
