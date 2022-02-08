@@ -321,20 +321,6 @@ static ssize_t chip_info_show(
 	return cnt;
 }
 
-/* reset chip */
-static ssize_t goodix_ts_reset_store(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct goodix_ts_core *core_data = dev_get_drvdata(dev);
-	struct goodix_ts_hw_ops *hw_ops = core_data->hw_ops;
-
-	if (!buf || count <= 0)
-		return -EINVAL;
-	if (buf[0] != '0')
-		hw_ops->reset(core_data, GOODIX_NORMAL_RESET_DELAY_MS);
-	return count;
-}
-
 /* read config */
 static ssize_t read_cfg_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
@@ -719,7 +705,6 @@ static ssize_t goodix_ts_debug_log_store(struct device *dev,
 
 static DEVICE_ATTR(driver_info, 0440, driver_info_show, NULL);
 static DEVICE_ATTR(chip_info, 0440, chip_info_show, NULL);
-static DEVICE_ATTR(reset, 0220, NULL, goodix_ts_reset_store);
 static DEVICE_ATTR(send_cfg, 0220, NULL, goodix_ts_send_cfg_store);
 static DEVICE_ATTR(read_cfg, 0440, read_cfg_show, NULL);
 static DEVICE_ATTR(reg_rw, 0664, goodix_ts_reg_rw_show, goodix_ts_reg_rw_store);
@@ -733,7 +718,6 @@ static DEVICE_ATTR(
 static struct attribute *sysfs_attrs[] = {
 	&dev_attr_driver_info.attr,
 	&dev_attr_chip_info.attr,
-	&dev_attr_reset.attr,
 	&dev_attr_send_cfg.attr,
 	&dev_attr_read_cfg.attr,
 	&dev_attr_reg_rw.attr,
@@ -763,6 +747,78 @@ static int goodix_ts_sysfs_init(struct goodix_ts_core *core_data)
 static void goodix_ts_sysfs_exit(struct goodix_ts_core *core_data)
 {
 	sysfs_remove_group(&core_data->pdev->dev.kobj, &sysfs_group);
+}
+
+int get_fw_version(struct device *dev, char *buf, size_t buf_size)
+{
+	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	int ret = 0;
+
+	ret = cd->hw_ops->read_version(cd, &cd->fw_version);
+	if (ret) {
+		return ret;
+	}
+
+	snprintf(buf, buf_size, "%02x.%02x.%02x.%02x",
+		cd->fw_version.patch_vid[0], cd->fw_version.patch_vid[1],
+		cd->fw_version.patch_vid[2], cd->fw_version.patch_vid[3]);
+	return ret;
+}
+
+int get_irq_enabled(struct device *dev)
+{
+	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	return atomic_read(&cd->irq_enabled);
+}
+
+int set_irq_enabled(struct device *dev, bool enabled)
+{
+	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	return cd->hw_ops->irq_enable(cd, enabled);
+}
+
+bool is_scan_mode_supported(struct device *dev, enum scan_mode mode)
+{
+	return mode == SCAN_MODE_AUTO ? true : false;
+}
+
+int ping(struct device *dev)
+{
+	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	return cd->hw_ops->ping(cd);
+}
+
+int hardware_reset(struct device *dev)
+{
+	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	return cd->hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+}
+
+int set_sensing_enabled(struct device *dev, bool enabled)
+{
+	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	if (enabled) {
+		cd->hw_ops->resume(cd);
+		cd->hw_ops->irq_enable(cd, true);
+		goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
+		ts_info("set sense ON");
+	} else {
+		goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
+		cd->hw_ops->irq_enable(cd, false);
+		cd->hw_ops->suspend(cd);
+		ts_info("set sense OFF");
+	}
+	return 0;
+}
+
+int get_wake_lock_state(struct device *dev)
+{
+	return 1;
+}
+
+int set_wake_lock_state(struct device *dev, bool locked)
+{
+	return locked ? 0 : -EINVAL;
 }
 
 /* prosfs create */
@@ -1995,6 +2051,23 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 		goto err_init_sysfs;
 	}
 
+	/* create sysfs files for our own APIs */
+	cd->apis_data.get_fw_version = get_fw_version;
+	cd->apis_data.get_irq_enabled = get_irq_enabled;
+	cd->apis_data.set_irq_enabled = set_irq_enabled;
+	cd->apis_data.is_scan_mode_supported = is_scan_mode_supported;
+	cd->apis_data.ping = ping;
+	cd->apis_data.hardware_reset = hardware_reset;
+	cd->apis_data.set_sensing_enabled = set_sensing_enabled;
+	cd->apis_data.get_wake_lock_state = get_wake_lock_state;
+	cd->apis_data.set_wake_lock_state = set_wake_lock_state;
+
+	ret = touch_apis_init(&cd->pdev->dev, &cd->apis_data);
+	if (ret < 0) {
+		ts_err("failed set init apis");
+		goto err_init_apis;
+	}
+
 	/* create procfs files */
 	ret = goodix_ts_procfs_init(cd);
 	if (ret < 0) {
@@ -2042,6 +2115,8 @@ err_init_gesture:
 err_init_esd:
 	goodix_ts_procfs_exit(cd);
 err_init_procfs:
+	touch_apis_deinit(&cd->pdev->dev);
+err_init_apis:
 	goodix_ts_sysfs_exit(cd);
 err_init_sysfs:
 #if IS_ENABLED(CONFIG_FB)
@@ -2339,6 +2414,7 @@ static int goodix_ts_remove(struct platform_device *pdev)
 		goodix_ts_input_dev_remove(core_data);
 		goodix_ts_pen_dev_remove(core_data);
 		goodix_ts_sysfs_exit(core_data);
+		touch_apis_deinit(&core_data->pdev->dev);
 		goodix_ts_procfs_exit(core_data);
 		goodix_ts_power_off(core_data);
 	}

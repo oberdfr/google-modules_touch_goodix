@@ -1425,6 +1425,7 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 	.event_handler = brl_event_handler,
 	.after_event_handler = brl_after_event_handler,
 	.get_capacitance_data = brl_get_capacitance_data,
+	.ping = brl_dev_confirm,
 };
 
 struct goodix_ts_hw_ops *goodix_get_hw_ops(void)

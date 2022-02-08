@@ -39,6 +39,7 @@
 #include <linux/fb.h>
 #include <linux/notifier.h>
 #endif
+#include "touch_apis.h"
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
@@ -464,6 +465,7 @@ struct goodix_ts_hw_ops {
 	int (*after_event_handler)(struct goodix_ts_core *cd);
 	int (*get_capacitance_data)(
 		struct goodix_ts_core *cd, struct ts_rawdata_info *info);
+	int (*ping)(struct goodix_ts_core *cd);
 };
 
 /*
@@ -499,6 +501,7 @@ struct goodix_ts_core {
 	struct goodix_ic_info ic_info;
 	struct goodix_bus_interface *bus;
 	struct goodix_ts_board_data board_data;
+	struct touch_apis_data apis_data;
 	struct goodix_ts_hw_ops *hw_ops;
 	struct input_dev *input_dev;
 	struct input_dev *pen_dev;
