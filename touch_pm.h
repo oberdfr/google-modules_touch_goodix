@@ -18,16 +18,18 @@ enum tpm_power_state {
 	TPM_PWR_ON,
 };
 
+#define TPM_WAKELOCK_TYPE_LOCK_MASK 0xFFFF
 /**
  * @brief: wakelock type.
  */
 enum tpm_wakelock_type {
-	TPM_WAKELOCK_TYPE_SCREEN_ON = 0x0001,
-	TPM_WAKELOCK_TYPE_IRQ = 0x0002,
-	TPM_WAKELOCK_TYPE_FW_UPDATE = 0x0004,
-	TPM_WAKELOCK_TYPE_SYSFS = 0x0008,
-	TPM_WAKELOCK_TYPE_FORCE_ACTIVE = 0x0010,
-	TPM_WAKELOCK_TYPE_BUGREPORT = 0x0020,
+	TPM_WAKELOCK_TYPE_SCREEN_ON = (1 << 0),
+	TPM_WAKELOCK_TYPE_IRQ = (1 << 1),
+	TPM_WAKELOCK_TYPE_FW_UPDATE = (1 << 2),
+	TPM_WAKELOCK_TYPE_SYSFS = (1 << 3),
+	TPM_WAKELOCK_TYPE_FORCE_ACTIVE = (1 << 4),
+	TPM_WAKELOCK_TYPE_BUGREPORT = (1 << 5),
+	TPM_WAKELOCK_TYPE_NON_WAKE_UP = (1 << 16),
 };
 
 struct touch_pm {
@@ -73,9 +75,9 @@ struct touch_pm {
 	int (*suspend)(struct device *dev);
 };
 
-extern int tpm_lock_wakelock(struct touch_pm *tpm, enum tpm_wakelock_type lock);
+extern int tpm_lock_wakelock(struct touch_pm *tpm, enum tpm_wakelock_type type);
 extern int tpm_unlock_wakelock(
-	struct touch_pm *tpm, enum tpm_wakelock_type lock);
+	struct touch_pm *tpm, enum tpm_wakelock_type type);
 extern int tpm_register_notification(struct touch_pm *tpm);
 extern int tpm_unregister_notification(struct touch_pm *tpm);
 

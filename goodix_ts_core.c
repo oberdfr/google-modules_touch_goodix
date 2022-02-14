@@ -1257,7 +1257,8 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	int ret;
 
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
-	tpm_lock_wakelock(&core_data->tpm, TPM_WAKELOCK_TYPE_IRQ);
+	tpm_lock_wakelock(&core_data->tpm,
+		TPM_WAKELOCK_TYPE_IRQ | TPM_WAKELOCK_TYPE_NON_WAKE_UP);
 #endif
 
 	ts_esd->irq_status = true;

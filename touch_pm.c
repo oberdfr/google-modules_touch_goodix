@@ -118,9 +118,10 @@ static void tpm_unregister_panel_bridge(struct drm_bridge *bridge)
 	bridge->dev = NULL;
 }
 
-int tpm_lock_wakelock(struct touch_pm *tpm, enum tpm_wakelock_type lock)
+int tpm_lock_wakelock(struct touch_pm *tpm, enum tpm_wakelock_type type)
 {
 	int ret = 0;
+	int lock = type & TPM_WAKELOCK_TYPE_LOCK_MASK;
 
 	mutex_lock(&tpm->lock_mutex);
 
@@ -133,10 +134,11 @@ int tpm_lock_wakelock(struct touch_pm *tpm, enum tpm_wakelock_type lock)
 	}
 
 	/*
-	 * IRQs can only keep the bus active. IRQs received while the
-	 * bus is transferred to AOC should be ignored.
+	 * If NON_WAKE_UP is set and the pm is suspend, we should ignore it.
+	 * For example, IRQs should only keep the bus active. IRQs received
+	 * while the pm is suspend should be ignored.
 	 */
-	if (lock == TPM_WAKELOCK_TYPE_IRQ && tpm->locks == 0) {
+	if (type & TPM_WAKELOCK_TYPE_NON_WAKE_UP && tpm->locks == 0) {
 		mutex_unlock(&tpm->lock_mutex);
 		return -EAGAIN;
 	}
@@ -168,9 +170,10 @@ int tpm_lock_wakelock(struct touch_pm *tpm, enum tpm_wakelock_type lock)
 	return ret;
 }
 
-int tpm_unlock_wakelock(struct touch_pm *tpm, enum tpm_wakelock_type lock)
+int tpm_unlock_wakelock(struct touch_pm *tpm, enum tpm_wakelock_type type)
 {
 	int ret = 0;
+	int lock = type & TPM_WAKELOCK_TYPE_LOCK_MASK;
 
 	mutex_lock(&tpm->lock_mutex);
 
