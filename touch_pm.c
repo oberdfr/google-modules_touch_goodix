@@ -122,6 +122,7 @@ int tpm_lock_wakelock(struct touch_pm *tpm, enum tpm_wakelock_type type)
 {
 	int ret = 0;
 	int lock = type & TPM_WAKELOCK_TYPE_LOCK_MASK;
+	bool wait_resume = false;
 
 	mutex_lock(&tpm->lock_mutex);
 
@@ -148,17 +149,21 @@ int tpm_lock_wakelock(struct touch_pm *tpm, enum tpm_wakelock_type type)
 	/* Complete or cancel any outstanding transitions */
 	cancel_work_sync(&tpm->suspend_work);
 	cancel_work_sync(&tpm->resume_work);
-	if (tpm->pwr_state != TPM_PWR_ON)
+	if (tpm->pwr_state != TPM_PWR_ON) {
+		/*
+		 * When triggering a wake, wait up to one second to resume.
+		 * SCREEN_ON and IRQ references do not need to wait.
+		 */
+		if (lock != TPM_WAKELOCK_TYPE_SCREEN_ON &&
+			lock != TPM_WAKELOCK_TYPE_IRQ) {
+			wait_resume = true;
+		}
 		queue_work(tpm->event_wq, &tpm->resume_work);
+	}
 
 	mutex_unlock(&tpm->lock_mutex);
 
-	/*
-	 * When triggering a wake, wait up to one second to resume. SCREEN_ON
-	 * and IRQ references do not need to wait.
-	 */
-	if (lock != TPM_WAKELOCK_TYPE_SCREEN_ON &&
-		lock != TPM_WAKELOCK_TYPE_IRQ) {
+	if (wait_resume) {
 		wait_for_completion_timeout(&tpm->bus_resumed, HZ);
 		if (tpm->pwr_state != TPM_PWR_ON) {
 			dev_err(&tpm->pdev->dev,
