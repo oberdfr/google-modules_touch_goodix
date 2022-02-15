@@ -1256,6 +1256,10 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	struct goodix_ts_esd *ts_esd = &core_data->ts_esd;
 	int ret;
 
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
+	tpm_lock_wakelock(&core_data->tpm, TPM_WAKELOCK_TYPE_IRQ);
+#endif
+
 	ts_esd->irq_status = true;
 	core_data->irq_trig_cnt++;
 	/* inform external module */
@@ -1267,6 +1271,10 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		ret = ext_module->funcs->irq_event(core_data, ext_module);
 		if (ret == EVT_CANCEL_IRQEVT) {
 			mutex_unlock(&goodix_modules.mutex);
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
+			tpm_unlock_wakelock(
+				&core_data->tpm, TPM_WAKELOCK_TYPE_IRQ);
+#endif
 			return IRQ_HANDLED;
 		}
 	}
@@ -1289,6 +1297,9 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 			goodix_ts_request_handle(core_data, ts_event);
 	}
 
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
+	tpm_unlock_wakelock(&core_data->tpm, TPM_WAKELOCK_TYPE_IRQ);
+#endif
 	return IRQ_HANDLED;
 }
 
