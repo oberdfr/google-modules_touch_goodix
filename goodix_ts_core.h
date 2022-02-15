@@ -40,6 +40,9 @@
 #include <linux/notifier.h>
 #endif
 #include "touch_apis.h"
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
+#include "touch_pm.h"
+#endif
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
@@ -528,6 +531,9 @@ struct goodix_ts_core {
 
 #if IS_ENABLED(CONFIG_FB)
 	struct notifier_block fb_notifier;
+#endif
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
+	struct touch_pm tpm;
 #endif
 };
 

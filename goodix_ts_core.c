@@ -2039,6 +2039,19 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 		}
 	}
 
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
+	cd->tpm.pdev = cd->pdev;
+#ifdef CONFIG_OF
+	cd->tpm.of_node = cd->bus->dev->of_node;
+#endif
+	cd->tpm.resume = goodix_ts_pm_resume;
+	cd->tpm.suspend = goodix_ts_pm_suspend;
+	ret = tpm_register_notification(&cd->tpm);
+	if (ret < 0) {
+		ts_info("Failed to egister touch pm");
+		goto err_init_tpm;
+	}
+#endif
 #if IS_ENABLED(CONFIG_FB)
 	cd->fb_notifier.notifier_call = goodix_ts_fb_notifier_callback;
 	if (fb_register_client(&cd->fb_notifier))
@@ -2121,6 +2134,10 @@ err_init_apis:
 err_init_sysfs:
 #if IS_ENABLED(CONFIG_FB)
 	fb_unregister_client(&cd->fb_notifier);
+#endif
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
+	tpm_unregister_notification(&cd->tpm);
+err_init_tpm:
 #endif
 	goodix_ts_pen_dev_remove(cd);
 err_finger:
@@ -2404,6 +2421,9 @@ static int goodix_ts_remove(struct platform_device *pdev)
 		gesture_module_exit();
 		inspect_module_exit();
 		hw_ops->irq_enable(core_data, false);
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
+		tpm_unregister_notification(&core_data->tpm);
+#endif
 #if IS_ENABLED(CONFIG_FB)
 		fb_unregister_client(&core_data->fb_notifier);
 #endif
@@ -2424,7 +2444,8 @@ static int goodix_ts_remove(struct platform_device *pdev)
 
 #if IS_ENABLED(CONFIG_PM)
 static const struct dev_pm_ops dev_pm_ops = {
-#if !IS_ENABLED(CONFIG_FB) && !IS_ENABLED(CONFIG_HAS_EARLYSUSPEND)
+#if !IS_ENABLED(CONFIG_FB) && !IS_ENABLED(CONFIG_HAS_EARLYSUSPEND) &&          \
+	!IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
 	.suspend = goodix_ts_pm_suspend,
 	.resume = goodix_ts_pm_resume,
 #endif
