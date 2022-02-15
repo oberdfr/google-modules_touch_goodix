@@ -19,3 +19,8 @@ config TOUCHSCREEN_GOODIX_BRL_SPI
 	  Say Y here if the touchscreen is connected via SPI bus.
 
 endif
+
+config TOUCHSCREEN_PM
+	bool "touch power manager"
+	help
+	  Say Y here if the touchscreen is connected via SPI bus.
