@@ -203,6 +203,16 @@ int tpm_unlock_wakelock(struct touch_pm *tpm, enum tpm_wakelock_type type)
 	return ret;
 }
 
+bool tpm_get_lock_state(struct touch_pm *tpm, enum tpm_wakelock_type type)
+{
+	return tpm->locks & type ? true : false;
+}
+
+int tpm_get_lock_states(struct touch_pm *tpm)
+{
+	return tpm->locks;
+}
+
 static void tpm_suspend_work(struct work_struct *work)
 {
 	struct touch_pm *tpm =

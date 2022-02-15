@@ -202,7 +202,7 @@ static ssize_t scan_mode_store(struct device *dev,
 	if (buf == NULL || count < SCAN_MODE_AUTO)
 		return -EINVAL;
 
-	if (kstrtoint(buf, 10, (int*)&mode)) {
+	if (kstrtoint(buf, 10, (int *)&mode)) {
 		return -EINVAL;
 	}
 
@@ -258,16 +258,13 @@ static ssize_t wake_lock_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int ret = 0;
+	bool locked = false;
 
 	if (apis->get_wake_lock_state != NULL) {
-		ret = apis->get_wake_lock_state(dev);
-		if (ret < 0) {
-			ret = snprintf(buf, PAGE_SIZE, "error: %d\n", ret);
-		} else {
-			ret = snprintf(buf, PAGE_SIZE, "result: %s\n",
-				ret == WAKE_LOCK_STATE_LOCKED ? "locked"
-							      : "unlocked");
-		}
+		locked = apis->get_wake_lock_state(
+			dev, TPM_WAKELOCK_TYPE_FORCE_ACTIVE);
+		ret = snprintf(buf, PAGE_SIZE, "result: %s\n",
+			locked ? "locked" : "unlocked");
 	} else {
 		ret = snprintf(buf, PAGE_SIZE, "error: not support\n");
 	}
@@ -284,15 +281,16 @@ static ssize_t wake_lock_store(struct device *dev,
 		return -EINVAL;
 
 	if (strncmp(buf, "1", 1) == 0) {
-		locked = WAKE_LOCK_STATE_LOCKED;
+		locked = true;
 	} else if (strncmp(buf, "0", 1) == 0) {
-		locked = WAKE_LOCK_STATE_UNLOCKED;
+		locked = false;
 	} else {
 		return -EINVAL;
 	}
 
 	if (apis->set_wake_lock_state != NULL) {
-		ret = apis->set_wake_lock_state(dev, locked);
+		ret = apis->set_wake_lock_state(
+			dev, TPM_WAKELOCK_TYPE_FORCE_ACTIVE, locked);
 		if (ret < 0) {
 			return ret;
 		}

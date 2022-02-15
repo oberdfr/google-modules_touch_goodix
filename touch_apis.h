@@ -8,6 +8,8 @@
 #ifndef _TOUCH_APIS_H_
 #define _TOUCH_APIS_H_
 
+#include "touch_pm.h"
+
 enum scan_mode {
 	SCAN_MODE_AUTO = 0,
 	SCAN_MODE_NORMAL_ACTIVE,
@@ -15,11 +17,6 @@ enum scan_mode {
 	SCAN_MODE_LOW_POWER_ACTIVE,
 	SCAN_MODE_LOW_POWER_IDLE,
 	SCAN_MODE_MAX,
-};
-
-enum wake_lock_state {
-	WAKE_LOCK_STATE_UNLOCKED = 0,
-	WAKE_LOCK_STATE_LOCKED,
 };
 
 enum reset_result {
@@ -42,8 +39,10 @@ struct touch_apis_data {
 	int (*software_reset)(struct device *dev);
 	int (*set_scan_mode)(struct device *dev, enum scan_mode mode);
 	int (*set_sensing_enabled)(struct device *dev, bool enabled);
-	int (*get_wake_lock_state)(struct device *dev);
-	int (*set_wake_lock_state)(struct device *dev, bool locked);
+	bool (*get_wake_lock_state)(
+		struct device *dev, enum tpm_wakelock_type type);
+	int (*set_wake_lock_state)(
+		struct device *dev, enum tpm_wakelock_type type, bool locked);
 };
 
 extern int touch_apis_init(struct device *dev, struct touch_apis_data *data);

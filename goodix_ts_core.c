@@ -811,14 +811,24 @@ int set_sensing_enabled(struct device *dev, bool enabled)
 	return 0;
 }
 
-int get_wake_lock_state(struct device *dev)
+bool get_wake_lock_state(struct device *dev, enum tpm_wakelock_type type)
 {
-	return 1;
+	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	return tpm_get_lock_state(&cd->tpm, type);
 }
 
-int set_wake_lock_state(struct device *dev, bool locked)
+int set_wake_lock_state(
+	struct device *dev, enum tpm_wakelock_type type, bool locked)
 {
-	return locked ? 0 : -EINVAL;
+	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	int ret = 0;
+
+	if (locked) {
+		ret = tpm_lock_wakelock(&cd->tpm, type);
+	} else {
+		ret = tpm_unlock_wakelock(&cd->tpm, type);
+	}
+	return ret;
 }
 
 /* prosfs create */

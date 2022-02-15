@@ -78,6 +78,9 @@ struct touch_pm {
 extern int tpm_lock_wakelock(struct touch_pm *tpm, enum tpm_wakelock_type type);
 extern int tpm_unlock_wakelock(
 	struct touch_pm *tpm, enum tpm_wakelock_type type);
+extern bool tpm_get_lock_state(
+	struct touch_pm *tpm, enum tpm_wakelock_type type);
+extern int tpm_get_lock_states(struct touch_pm *tpm);
 extern int tpm_register_notification(struct touch_pm *tpm);
 extern int tpm_unregister_notification(struct touch_pm *tpm);
 
