@@ -64,7 +64,7 @@ static ssize_t irq_enabled_show(
 			ret = snprintf(buf, PAGE_SIZE, "error: %d\n", ret);
 		} else {
 			ret = snprintf(buf, PAGE_SIZE, "result: %s\n",
-				ret ? "enabled" : "disable");
+				ret ? "enabled" : "disabled");
 		}
 	} else {
 		ret = snprintf(buf, PAGE_SIZE, "error: not support\n");
