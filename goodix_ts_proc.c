@@ -44,7 +44,8 @@
 
 #define SHORT_SIZE 100
 #define LARGE_SIZE 4096
-#define HUGE_SIZE 100 * 1024
+#define MAX_FRAME_CNT 50
+#define HUGE_SIZE MAX_FRAME_CNT * 20 * 1024
 static struct goodix_ts_core *cd;
 static char wbuf[SHORT_SIZE];
 static char *rbuf;
@@ -66,7 +67,6 @@ static uint32_t index;
 #define TEST_NG 0
 
 #define MAX_LINE_LEN (1024 * 6)
-#define MAX_FRAME_CNT 16
 #define MAX_DRV_NUM 17
 #define MAX_SEN_NUM 35
 #define MAX_SHORT_NUM 15
