@@ -198,6 +198,7 @@ static ssize_t scan_mode_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	enum scan_mode mode = 0;
+	int ret = 0;
 
 	if (buf == NULL || count < SCAN_MODE_AUTO)
 		return -EINVAL;
@@ -212,7 +213,11 @@ static ssize_t scan_mode_store(struct device *dev,
 	}
 
 	if (apis->set_scan_mode != NULL) {
-		apis->set_scan_mode(dev, mode);
+		ret = apis->set_scan_mode(dev, mode);
+		if (ret != 0) {
+			return ret;
+		}
+		apis->scan_mode = mode;
 	}
 	return count;
 }

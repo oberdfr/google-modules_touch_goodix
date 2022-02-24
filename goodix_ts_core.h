@@ -469,6 +469,7 @@ struct goodix_ts_hw_ops {
 	int (*get_capacitance_data)(
 		struct goodix_ts_core *cd, struct ts_rawdata_info *info);
 	int (*ping)(struct goodix_ts_core *cd);
+	int (*set_scan_mode)(struct goodix_ts_core *cd, int mdoe);
 };
 
 /*

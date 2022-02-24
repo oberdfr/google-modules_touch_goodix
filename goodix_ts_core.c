@@ -779,7 +779,8 @@ int set_irq_enabled(struct device *dev, bool enabled)
 
 bool is_scan_mode_supported(struct device *dev, enum scan_mode mode)
 {
-	return mode == SCAN_MODE_AUTO ? true : false;
+	return mode == SCAN_MODE_AUTO || mode == SCAN_MODE_NORMAL_ACTIVE ||
+	       mode == SCAN_MODE_NORMAL_IDLE;
 }
 
 int ping(struct device *dev)
@@ -792,6 +793,12 @@ int hardware_reset(struct device *dev)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
 	return cd->hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+}
+
+int set_scan_mode(struct device *dev, enum scan_mode mode)
+{
+	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	return cd->hw_ops->set_scan_mode(cd, mode);
 }
 
 int set_sensing_enabled(struct device *dev, bool enabled)
@@ -2093,6 +2100,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	cd->apis_data.is_scan_mode_supported = is_scan_mode_supported;
 	cd->apis_data.ping = ping;
 	cd->apis_data.hardware_reset = hardware_reset;
+	cd->apis_data.set_scan_mode = set_scan_mode;
 	cd->apis_data.set_sensing_enabled = set_sensing_enabled;
 	cd->apis_data.get_wake_lock_state = get_wake_lock_state;
 	cd->apis_data.set_wake_lock_state = set_wake_lock_state;

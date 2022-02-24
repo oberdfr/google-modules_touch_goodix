@@ -1407,6 +1407,20 @@ exit:
 	return ret;
 }
 
+#define GOODIX_CMD_SET_SCAN_MODE 0x9F
+int brl_set_scan_mode(struct goodix_ts_core *cd, int mode)
+{
+	struct goodix_ts_cmd cmd;
+
+	cmd.cmd = GOODIX_CMD_SET_SCAN_MODE;
+	cmd.len = 5;
+	cmd.data[0] = mode;
+	if (cd->hw_ops->send_cmd(cd, &cmd))
+		ts_err("failed set scan mode cmd");
+
+	return 0;
+}
+
 static struct goodix_ts_hw_ops brl_hw_ops = {
 	.power_on = brl_power_on,
 	.resume = brl_resume,
@@ -1426,6 +1440,7 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 	.after_event_handler = brl_after_event_handler,
 	.get_capacitance_data = brl_get_capacitance_data,
 	.ping = brl_dev_confirm,
+	.set_scan_mode = brl_set_scan_mode,
 };
 
 struct goodix_ts_hw_ops *goodix_get_hw_ops(void)
