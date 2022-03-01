@@ -1438,6 +1438,20 @@ int brl_set_scan_mode(struct goodix_ts_core *cd, int mode)
 	return 0;
 }
 
+#define GOODIX_CMD_SET_CONTINUOUSLY_REPORT_ENABLED 0xC3
+int brl_set_continuously_report_enabled(struct goodix_ts_core *cd, bool enabled)
+{
+	struct goodix_ts_cmd cmd;
+
+	cmd.cmd = GOODIX_CMD_SET_CONTINUOUSLY_REPORT_ENABLED;
+	cmd.len = 5;
+	cmd.data[0] = enabled ? 0 : 1;
+	if (cd->hw_ops->send_cmd(cd, &cmd))
+		ts_err("failed set continuous mode cmd");
+
+	return 0;
+}
+
 static struct goodix_ts_hw_ops brl_hw_ops = {
 	.power_on = brl_power_on,
 	.resume = brl_resume,
@@ -1458,6 +1472,7 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 	.get_capacitance_data = brl_get_capacitance_data,
 	.ping = brl_dev_confirm,
 	.set_scan_mode = brl_set_scan_mode,
+	.set_continuously_report_enabled = brl_set_continuously_report_enabled,
 };
 
 struct goodix_ts_hw_ops *goodix_get_hw_ops(void)

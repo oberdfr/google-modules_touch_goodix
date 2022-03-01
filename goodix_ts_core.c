@@ -749,6 +749,14 @@ static void goodix_ts_sysfs_exit(struct goodix_ts_core *core_data)
 	sysfs_remove_group(&core_data->pdev->dev.kobj, &sysfs_group);
 }
 
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
+int set_continuously_report_enabled(struct device *dev, bool enabled)
+{
+	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	return cd->hw_ops->set_continuously_report_enabled(cd, enabled);
+}
+#endif
+
 int get_fw_version(struct device *dev, char *buf, size_t buf_size)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
@@ -1202,8 +1210,9 @@ static void goodix_ts_report_pen(
 }
 
 static void goodix_ts_report_finger(
-	struct input_dev *dev, struct goodix_touch_data *touch_data)
+	struct goodix_ts_core *cd, struct goodix_touch_data *touch_data)
 {
+	struct input_dev *dev = cd->input_dev;
 	unsigned int touch_num = touch_data->touch_num;
 	int i;
 
@@ -1238,6 +1247,10 @@ static void goodix_ts_report_finger(
 
 	input_report_key(dev, BTN_TOUCH, touch_num > 0 ? 1 : 0);
 	input_sync(dev);
+
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
+	touch_mf_update_state(&cd->tmf, touch_num);
+#endif
 
 	mutex_unlock(&dev->mutex);
 }
@@ -1311,7 +1324,7 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		if (ts_event->event_type == EVENT_TOUCH) {
 			/* report touch */
 			goodix_ts_report_finger(
-				core_data->input_dev, &ts_event->touch_data);
+				core_data, &ts_event->touch_data);
 		}
 		if (core_data->board_data.pen_enable &&
 			ts_event->event_type == EVENT_PEN) {
@@ -2096,6 +2109,14 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	if (fb_register_client(&cd->fb_notifier))
 		ts_err("Failed to register fb notifier client:%d", ret);
 #endif
+
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
+	cd->tmf.pdev = cd->pdev;
+	cd->tmf.set_continuously_report_enabled =
+		set_continuously_report_enabled;
+	touch_mf_init(&cd->tmf);
+#endif
+
 	/* create sysfs files */
 	ret = goodix_ts_sysfs_init(cd);
 	if (ret < 0) {
@@ -2114,6 +2135,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	cd->apis_data.set_sensing_enabled = set_sensing_enabled;
 	cd->apis_data.get_wake_lock_state = get_wake_lock_state;
 	cd->apis_data.set_wake_lock_state = set_wake_lock_state;
+	cd->apis_data.tmf = &cd->tmf;
 
 	ret = touch_apis_init(&cd->pdev->dev, &cd->apis_data);
 	if (ret < 0) {

@@ -12,4 +12,5 @@ goodix_brl_touch-objs += \
 	goodix_ts_utils.o \
 	goodix_ts_proc.o \
 	touch_apis.o \
-	touch_pm.o
+	touch_pm.o \
+	touch_mf_mode.o

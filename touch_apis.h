@@ -8,6 +8,7 @@
 #ifndef _TOUCH_APIS_H_
 #define _TOUCH_APIS_H_
 
+#include "touch_mf_mode.h"
 #include "touch_pm.h"
 
 enum scan_mode {
@@ -29,6 +30,8 @@ enum reset_result {
 struct touch_apis_data {
 	int reset_result;
 	int scan_mode;
+	struct touch_mf *tmf;
+	enum touch_mf_mode mf_mode;
 
 	int (*get_fw_version)(struct device *dev, char *buf, size_t buf_size);
 	int (*get_irq_enabled)(struct device *dev);

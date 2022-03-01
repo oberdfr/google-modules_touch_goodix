@@ -124,6 +124,38 @@ static ssize_t list_scan_mode_show(
 	return ret;
 }
 
+static ssize_t mf_mode_show(
+	struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "result: %d\n", apis->mf_mode);
+}
+
+static ssize_t mf_mode_store(struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	enum touch_mf_mode mode = 0;
+	int ret = 0;
+
+	if (buf == NULL || count < 0)
+		return -EINVAL;
+
+	if (kstrtoint(buf, 10, (int *)&mode)) {
+		return -EINVAL;
+	}
+
+	if (mode < TOUCH_MF_MODE_UNFILTERED ||
+		mode > TOUCH_MF_MODE_AUTO_REPORT) {
+		return -EINVAL;
+	}
+
+	ret = touch_mf_set_mode(apis->tmf, mode);
+	if (ret != 0) {
+		return ret;
+	}
+	apis->mf_mode = mode;
+	return count;
+}
+
 static ssize_t ping_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -200,7 +232,7 @@ static ssize_t scan_mode_store(struct device *dev,
 	enum scan_mode mode = 0;
 	int ret = 0;
 
-	if (buf == NULL || count < SCAN_MODE_AUTO)
+	if (buf == NULL || count < 0)
 		return -EINVAL;
 
 	if (kstrtoint(buf, 10, (int *)&mode)) {
@@ -307,6 +339,7 @@ static DEVICE_ATTR_RO(fw_ver);
 static DEVICE_ATTR_RO(help);
 static DEVICE_ATTR_RW(irq_enabled);
 static DEVICE_ATTR_RO(list_scan_mode);
+static DEVICE_ATTR_RW(mf_mode);
 static DEVICE_ATTR_RO(ping);
 static DEVICE_ATTR_RW(reset);
 static DEVICE_ATTR_RW(scan_mode);
@@ -318,6 +351,7 @@ static struct attribute *sysfs_attrs[] = {
 	&dev_attr_help.attr,
 	&dev_attr_irq_enabled.attr,
 	&dev_attr_list_scan_mode.attr,
+	&dev_attr_mf_mode.attr,
 	&dev_attr_ping.attr,
 	&dev_attr_reset.attr,
 	&dev_attr_scan_mode.attr,

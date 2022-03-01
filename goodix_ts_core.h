@@ -43,6 +43,9 @@
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
 #include "touch_pm.h"
 #endif
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
+#include "touch_mf_mode.h"
+#endif
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
@@ -471,6 +474,8 @@ struct goodix_ts_hw_ops {
 		struct goodix_ts_core *cd, struct ts_rawdata_info *info);
 	int (*ping)(struct goodix_ts_core *cd);
 	int (*set_scan_mode)(struct goodix_ts_core *cd, int mdoe);
+	int (*set_continuously_report_enabled)(
+		struct goodix_ts_core *cd, bool enabled);
 };
 
 /*
@@ -536,6 +541,9 @@ struct goodix_ts_core {
 #endif
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
 	struct touch_pm tpm;
+#endif
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
+	struct touch_mf tmf;
 #endif
 };
 
