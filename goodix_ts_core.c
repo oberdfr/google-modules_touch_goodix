@@ -1246,6 +1246,7 @@ static void goodix_ts_report_finger(
 	}
 
 	input_report_key(dev, BTN_TOUCH, touch_num > 0 ? 1 : 0);
+	input_set_timestamp(dev, cd->coords_timestamp);
 	input_sync(dev);
 
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
@@ -1274,6 +1275,15 @@ static int goodix_ts_request_handle(
 		ts_info("success handle ic request 0x%x",
 			ts_event->request_code);
 	return ret;
+}
+
+static irqreturn_t goodix_ts_isr(int irq, void *data)
+{
+	struct goodix_ts_core *core_data = data;
+
+	core_data->isr_timestamp = ktime_get();
+
+	return IRQ_WAKE_THREAD;
 }
 
 /**
@@ -1323,6 +1333,7 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	if (likely(!ret)) {
 		if (ts_event->event_type == EVENT_TOUCH) {
 			/* report touch */
+			core_data->coords_timestamp = core_data->isr_timestamp;
 			goodix_ts_report_finger(
 				core_data, &ts_event->touch_data);
 		}
@@ -1360,7 +1371,7 @@ static int goodix_ts_irq_setup(struct goodix_ts_core *core_data)
 
 	ts_info("IRQ:%u,flags:%d", core_data->irq, (int)ts_bdata->irq_flags);
 	ret = devm_request_threaded_irq(&core_data->pdev->dev, core_data->irq,
-		NULL, goodix_ts_threadirq_func,
+		goodix_ts_isr, goodix_ts_threadirq_func,
 		ts_bdata->irq_flags | IRQF_ONESHOT, GOODIX_CORE_DRIVER_NAME,
 		core_data);
 	if (ret < 0)

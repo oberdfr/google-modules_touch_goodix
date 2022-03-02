@@ -545,6 +545,12 @@ struct goodix_ts_core {
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
 	struct touch_mf tmf;
 #endif
+
+	/* Time that the event was first received from the touch IC,
+	 * acquired during hard interrupt, in CLOCK_MONOTONIC.
+	 */
+	ktime_t isr_timestamp;
+	ktime_t coords_timestamp;
 };
 
 /* external module structures */
