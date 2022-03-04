@@ -9,6 +9,7 @@
 #define CMD_OPEN_TEST "open_test"
 #define CMD_SELF_OPEN_TEST "self_open_test"
 #define CMD_NOISE_TEST "noise_test"
+#define CMD_AUTO_NOISE_TEST "auto_noise_test"
 #define CMD_SHORT_TEST "short_test"
 #define CMD_GET_PACKAGE_ID "get_package_id"
 #define CMD_GET_VERSION "get_version"
@@ -25,11 +26,22 @@
 #define CMD_SET_ESD_ENABLE "set_esd_enable"
 #define CMD_SET_DEBUG_LOG "set_debug_log"
 #define CMD_SET_SCAN_MODE "set_scan_mode"
+#define CMD_GET_SCAN_MODE "get_scan_mode"
 #define CMD_SET_CONTINUE_MODE "set_continue_mode"
 #define CMD_GET_CHANNEL_NUM "get_channel_num"
 #define CMD_GET_TX_FREQ "get_tx_freq"
 #define CMD_RESET "reset"
 #define CMD_SET_SENSE_ENABLE "set_sense_enable"
+
+char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
+	CMD_SELF_OPEN_TEST, CMD_NOISE_TEST, CMD_AUTO_NOISE_TEST, CMD_SHORT_TEST,
+	CMD_GET_PACKAGE_ID, CMD_GET_VERSION, CMD_GET_RAWDATA, CMD_GET_DIFFDATA,
+	CMD_GET_BASEDATA, CMD_GET_SELF_RAWDATA, CMD_GET_SELF_DIFFDATA,
+	CMD_GET_SELF_BASEDATA, CMD_SET_DOUBLE_TAP, CMD_SET_SINGLE_TAP,
+	CMD_SET_CHARGE_MODE, CMD_SET_IRQ_ENABLE, CMD_SET_ESD_ENABLE,
+	CMD_SET_DEBUG_LOG, CMD_SET_SCAN_MODE, CMD_GET_SCAN_MODE,
+	CMD_SET_CONTINUE_MODE, CMD_GET_CHANNEL_NUM, CMD_GET_TX_FREQ, CMD_RESET,
+	CMD_SET_SENSE_ENABLE, NULL };
 
 /* test limits keyword */
 #define CSV_TP_SPECIAL_RAW_MIN "special_raw_min"
@@ -104,6 +116,9 @@ struct ts_test_self_rawdata {
 	u32 size;
 };
 
+static int raw_data_cnt;
+static int noise_data_cnt;
+
 struct goodix_ts_test {
 	bool item[MAX_TEST_ITEMS];
 	char result[MAX_TEST_ITEMS];
@@ -122,11 +137,9 @@ struct goodix_ts_test {
 	s16 avdd_value;
 
 	int freq;
-	int raw_data_cnt;
-	struct ts_test_rawdata rawdata[MAX_FRAME_CNT];
-	struct ts_test_rawdata deltadata[MAX_FRAME_CNT];
-	int noise_data_cnt;
-	struct ts_test_rawdata noisedata[MAX_FRAME_CNT];
+	struct ts_test_rawdata *rawdata;
+	struct ts_test_rawdata *deltadata;
+	struct ts_test_rawdata *noisedata;
 	struct ts_test_self_rawdata selfrawdata;
 	struct ts_short_res short_res;
 };
@@ -137,13 +150,31 @@ static int malloc_test_resource(void)
 	ts_test = kzalloc(sizeof(*ts_test), GFP_KERNEL);
 	if (!ts_test)
 		return -ENOMEM;
+	if (raw_data_cnt > 0) {
+		ts_test->rawdata = kcalloc(raw_data_cnt,
+			sizeof(struct ts_test_rawdata), GFP_KERNEL);
+		ts_test->deltadata = kcalloc(raw_data_cnt,
+			sizeof(struct ts_test_rawdata), GFP_KERNEL);
+	}
+	if (noise_data_cnt > 0) {
+		ts_test->noisedata = kcalloc(noise_data_cnt,
+			sizeof(struct ts_test_rawdata), GFP_KERNEL);
+	}
+
 	return 0;
 }
 
 static void release_test_resource(void)
 {
-	kfree(ts_test);
-	ts_test = NULL;
+	if (ts_test) {
+		kfree(ts_test->rawdata);
+		kfree(ts_test->deltadata);
+		kfree(ts_test->noisedata);
+		kfree(ts_test);
+		ts_test = NULL;
+	}
+	raw_data_cnt = 0;
+	noise_data_cnt = 0;
 }
 
 #define CHN_VDD 0xFF
@@ -1020,8 +1051,7 @@ static void goodix_save_limits(void)
 		index += sprintf(
 			&rbuf[index], "<Item name=\"Rawdata Test Sets\">\n");
 		index += sprintf(&rbuf[index],
-			"<TotalFrameCnt>%d</TotalFrameCnt>\n",
-			ts_test->raw_data_cnt);
+			"<TotalFrameCnt>%d</TotalFrameCnt>\n", raw_data_cnt);
 		/* rawdata max limit */
 		index += sprintf(&rbuf[index], "<MaxRawLimit>\n");
 		for (i = 0; i < tx * rx; i++) {
@@ -1057,8 +1087,7 @@ static void goodix_save_limits(void)
 		index += sprintf(
 			&rbuf[index], "<Item name=\"Diffdata Test Sets\">\n");
 		index += sprintf(&rbuf[index],
-			"<TotalFrameCnt>%d</TotalFrameCnt>\n",
-			ts_test->noise_data_cnt);
+			"<TotalFrameCnt>%d</TotalFrameCnt>\n", noise_data_cnt);
 		index += sprintf(&rbuf[index],
 			"<MaxJitterLimit>%d</MaxJitterLimit>\n",
 			ts_test->noise_threshold);
@@ -1132,7 +1161,7 @@ static void goodix_save_data(void)
 	/* save rawdata */
 	if (ts_test->item[GTP_CAP_TEST]) {
 		index += sprintf(&rbuf[index], "<RawDataRecord>\n");
-		for (i = 0; i < ts_test->raw_data_cnt; i++) {
+		for (i = 0; i < raw_data_cnt; i++) {
 			goodix_data_cal(
 				ts_test->rawdata[i].data, tx * rx, stat_result);
 			index += sprintf(&rbuf[index],
@@ -1166,7 +1195,7 @@ static void goodix_save_data(void)
 	/* save noisedata */
 	if (ts_test->item[GTP_NOISE_TEST]) {
 		index += sprintf(&rbuf[index], "<DiffDataRecord>\n");
-		for (i = 0; i < ts_test->noise_data_cnt; i++) {
+		for (i = 0; i < noise_data_cnt; i++) {
 			goodix_data_cal(ts_test->noisedata[i].data, tx * rx,
 				stat_result);
 			index += sprintf(&rbuf[index],
@@ -1469,7 +1498,7 @@ static int goodix_delta_test(void)
 	u32 data_size = tx * rx;
 	int ret = 0;
 
-	for (i = 0; i < ts_test->raw_data_cnt; i++) {
+	for (i = 0; i < raw_data_cnt; i++) {
 		for (j = 0; j < data_size; j++) {
 			raw = ts_test->rawdata[i].data[j];
 			max_val = 0;
@@ -1564,7 +1593,7 @@ static int goodix_open_test(void)
 	}
 
 	/* read rawdata */
-	for (i = 0; i < ts_test->raw_data_cnt; i++) {
+	for (i = 0; i < raw_data_cnt; i++) {
 		val = 0;
 		cd->hw_ops->write(cd, sync_addr, &val, 1);
 		retry = 20;
@@ -1588,7 +1617,7 @@ static int goodix_open_test(void)
 
 	/* analysis results */
 	ts_test->result[GTP_CAP_TEST] = TEST_OK;
-	for (i = 0; i < ts_test->raw_data_cnt; i++) {
+	for (i = 0; i < raw_data_cnt; i++) {
 		for (j = 0; j < tx * rx; j++) {
 			tmp_val = ts_test->rawdata[i].data[j];
 			if (tmp_val > ts_test->max_limits[j] ||
@@ -1723,7 +1752,7 @@ static int goodix_noise_test(void)
 	}
 
 	/* read noisedata */
-	for (i = 0; i < ts_test->noise_data_cnt; i++) {
+	for (i = 0; i < noise_data_cnt; i++) {
 		val = 0;
 		cd->hw_ops->write(cd, sync_addr, &val, 1);
 		retry = 20;
@@ -1747,7 +1776,7 @@ static int goodix_noise_test(void)
 
 	/* analysis results */
 	ts_test->result[GTP_NOISE_TEST] = TEST_OK;
-	for (i = 0; i < ts_test->noise_data_cnt; i++) {
+	for (i = 0; i < noise_data_cnt; i++) {
 		for (j = 0; j < tx * rx; j++) {
 			tmp_val = ts_test->noisedata[i].data[j];
 			tmp_val = ABS(tmp_val);
@@ -1812,6 +1841,64 @@ static int goodix_auto_test(void)
 	goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
 	goodix_save_test_result();
 	return 0;
+}
+
+static void goodix_auto_noise_test(u16 cnt, int threshold)
+{
+	struct goodix_ts_cmd temp_cmd;
+	u32 sync_addr = cd->ic_info.misc.frame_data_addr;
+	u32 raw_addr;
+	int tx = cd->ic_info.parm.drv_num;
+	int rx = cd->ic_info.parm.sen_num;
+	s16 tmp_buf[MAX_DRV_NUM * MAX_SEN_NUM];
+	int tmp_val;
+	u8 status;
+	int retry = 10;
+	int i;
+
+	raw_addr = cd->ic_info.misc.frame_data_addr +
+		   cd->ic_info.misc.frame_data_head_len +
+		   cd->ic_info.misc.fw_attr_len + cd->ic_info.misc.fw_log_len +
+		   8;
+
+	cd->hw_ops->irq_enable(cd, false);
+	goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
+
+	temp_cmd.len = 0x07;
+	temp_cmd.cmd = 0x90;
+	temp_cmd.data[0] = 0x86;
+	temp_cmd.data[1] = cnt & 0xFF;
+	temp_cmd.data[2] = (cnt >> 8) & 0xFF;
+	cd->hw_ops->send_cmd(cd, &temp_cmd);
+
+	msleep(cnt * 20);
+
+	while (retry--) {
+		cd->hw_ops->read(cd, sync_addr, &status, 1);
+		if (status == 0x80)
+			break;
+		usleep_range(5000, 5100);
+	}
+	if (retry < 0) {
+		ts_err("noise data not ready, status[%x]", status);
+		goto exit;
+	}
+
+	cd->hw_ops->read(cd, raw_addr, (u8 *)tmp_buf, tx * rx * 2);
+	for (i = 0; i < tx * rx; i++) {
+		tmp_val = tmp_buf[i];
+		tmp_val = ABS(tmp_val);
+		if (tmp_val > threshold) {
+			index = sprintf(rbuf, "FAIL\n");
+			goto exit;
+		}
+	}
+	index = sprintf(rbuf, "PASS\n");
+
+exit:
+	cd->hw_ops->reset(cd, 100);
+	cd->hw_ops->irq_enable(cd, true);
+	goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
 }
 
 static int get_cap_data(uint8_t *type)
@@ -1980,6 +2067,43 @@ static void goodix_set_scan_mode(u8 val)
 	temp_cmd.cmd = 0x9F;
 	temp_cmd.data[0] = val;
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
+}
+
+static void goodix_get_scan_mode(void)
+{
+	u32 cmd_addr = cd->ic_info.misc.cmd_addr;
+	u8 cmd_buf[] = { 0x00, 0x00, 0x05, 0xC5, 0x01, 0xCB, 0x00 };
+	u8 rcv_buf[2];
+	int retry = 20;
+
+	cd->hw_ops->write(cd, cmd_addr, cmd_buf, sizeof(cmd_buf));
+	while (retry--) {
+		usleep_range(2000, 2100);
+		cd->hw_ops->read(cd, cmd_addr, rcv_buf, sizeof(rcv_buf));
+		if (rcv_buf[0] == 0x80 && rcv_buf[1] == 0x80)
+			break;
+	}
+	if (retry < 0) {
+		ts_err("failed get scan mode, sta[%x] ack[%x]", rcv_buf[0],
+			rcv_buf[1]);
+		return;
+	}
+	cd->hw_ops->read(cd, 0x10184, rcv_buf, sizeof(rcv_buf));
+	ts_info("rcv_buf:%x %x", rcv_buf[0], rcv_buf[1]);
+
+	if (rcv_buf[1] == 1) {
+		index = sprintf(rbuf, "normal active\n");
+	} else if (rcv_buf[1] == 2) {
+		index = sprintf(rbuf, "normal idle\n");
+	} else if (rcv_buf[1] == 3) {
+		index = sprintf(rbuf, "lowpower active\n");
+	} else if (rcv_buf[1] == 4) {
+		index = sprintf(rbuf, "lowpower idle\n");
+	} else if (rcv_buf[1] == 5) {
+		index = sprintf(rbuf, "sleep\n");
+	} else {
+		index = sprintf(rbuf, "invalid mode %d\n", rcv_buf[1]);
+	}
 }
 
 static void goodix_set_continue_mode(u8 val)
@@ -2239,6 +2363,8 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_AUTO_TEST, strlen(CMD_AUTO_TEST))) {
+		raw_data_cnt = 16;
+		noise_data_cnt = 1;
 		rbuf = kzalloc(HUGE_SIZE, GFP_KERNEL);
 		ret = malloc_test_resource();
 		if (ret < 0) {
@@ -2249,8 +2375,6 @@ static ssize_t driver_test_write(
 		ts_test->item[GTP_NOISE_TEST] = true;
 		ts_test->item[GTP_SELFCAP_TEST] = true;
 		ts_test->item[GTP_SHORT_TEST] = true;
-		ts_test->raw_data_cnt = 16;
-		ts_test->noise_data_cnt = 1;
 		goodix_auto_test();
 		goto exit;
 	}
@@ -2303,22 +2427,19 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_NOISE_TEST, strlen(CMD_NOISE_TEST))) {
-		rbuf = kzalloc(HUGE_SIZE, GFP_KERNEL);
 		token = strsep(&p, ",");
 		if (!token || !p) {
-			index = sprintf(rbuf, "%s: invalid cmd param\n",
-				CMD_NOISE_TEST);
+			ts_err("%s: invalid cmd param", CMD_NOISE_TEST);
 			goto exit;
 		}
 		if (kstrtos32(p, 10, &cmd_val)) {
-			index = sprintf(rbuf, "%s: invalid cmd param\n",
-				CMD_NOISE_TEST);
+			ts_err("%s: invalid cmd param", CMD_NOISE_TEST);
 			goto exit;
 		}
-		if (cmd_val > MAX_FRAME_CNT) {
-			index = sprintf(rbuf,
-				"%s: frame cnt:%d > MAX_CNT[%d]\n",
-				CMD_NOISE_TEST, (int)cmd_val, MAX_FRAME_CNT);
+		noise_data_cnt = cmd_val;
+		rbuf = kzalloc(noise_data_cnt * 2000 + 5000, GFP_KERNEL);
+		if (!rbuf) {
+			ts_err("failed to malloc rbuf");
 			goto exit;
 		}
 		ret = malloc_test_resource();
@@ -2327,8 +2448,31 @@ static ssize_t driver_test_write(
 			goto exit;
 		}
 		ts_test->item[GTP_NOISE_TEST] = true;
-		ts_test->noise_data_cnt = cmd_val;
 		goodix_auto_test();
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_AUTO_NOISE_TEST, strlen(CMD_AUTO_NOISE_TEST))) {
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			ts_err("%s: invalid cmd param", CMD_AUTO_NOISE_TEST);
+			goto exit;
+		}
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			ts_err("%s: invalid cmd param", CMD_AUTO_NOISE_TEST);
+			goto exit;
+		}
+		if (kstrtos32(token, 10, &cmd_val)) {
+			ts_err("%s: invalid cmd param", CMD_AUTO_NOISE_TEST);
+			goto exit;
+		}
+		if (kstrtos32(p, 10, &cmd_val2)) {
+			ts_err("%s: invalid cmd param", CMD_AUTO_NOISE_TEST);
+			goto exit;
+		}
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		goodix_auto_noise_test(cmd_val, cmd_val2);
 		goto exit;
 	}
 
@@ -2365,6 +2509,12 @@ static ssize_t driver_test_write(
 		goto exit;
 	}
 
+	if (!strncmp(p, CMD_GET_SCAN_MODE, strlen(CMD_GET_SCAN_MODE))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		goodix_get_scan_mode();
+		goto exit;
+	}
+
 	if (!strncmp(p, CMD_SET_CONTINUE_MODE, strlen(CMD_SET_CONTINUE_MODE))) {
 		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
 		token = strsep(&p, ",");
@@ -2389,27 +2539,28 @@ static ssize_t driver_test_write(
 
 	/* open test */
 	if (!strncmp(p, CMD_OPEN_TEST, strlen(CMD_OPEN_TEST))) {
-		rbuf = kzalloc(HUGE_SIZE, GFP_KERNEL);
 		token = strsep(&p, ",");
 		if (!token || !p) {
-			index = sprintf(
-				rbuf, "%s: invalid cmd param\n", CMD_OPEN_TEST);
+			ts_err("%s: invalid cmd param", CMD_OPEN_TEST);
 			goto exit;
 		}
 		token = strsep(&p, ",");
 		if (!token || !p) {
-			index = sprintf(
-				rbuf, "%s: invalid cmd param\n", CMD_OPEN_TEST);
+			ts_err("%s: invalid cmd param", CMD_OPEN_TEST);
 			goto exit;
 		}
 		if (kstrtos32(token, 10, &cmd_val)) {
-			index = sprintf(
-				rbuf, "%s: invalid cmd param\n", CMD_OPEN_TEST);
+			ts_err("%s: invalid cmd param", CMD_OPEN_TEST);
 			goto exit;
 		}
 		if (kstrtos32(p, 10, &cmd_val2)) {
-			index = sprintf(
-				rbuf, "%s: invalid cmd param\n", CMD_OPEN_TEST);
+			ts_err("%s: invalid cmd param", CMD_OPEN_TEST);
+			goto exit;
+		}
+		raw_data_cnt = cmd_val;
+		rbuf = kzalloc(raw_data_cnt * 5000 + 10000, GFP_KERNEL);
+		if (!rbuf) {
+			ts_err("failed to malloc rbuf");
 			goto exit;
 		}
 		ret = malloc_test_resource();
@@ -2418,7 +2569,6 @@ static ssize_t driver_test_write(
 			goto exit;
 		}
 		ts_test->item[GTP_CAP_TEST] = true;
-		ts_test->raw_data_cnt = cmd_val;
 		ts_test->freq = cmd_val2;
 		goodix_auto_test();
 		goto exit;
@@ -2449,10 +2599,30 @@ static ssize_t driver_test_write(
 	}
 
 	rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
-	index = sprintf(rbuf, "not support cmd %s", p);
+	index = sprintf(rbuf, "not support cmd %s\n", p);
 	ts_err("not support cmd[%s]", p);
 exit:
 	return count;
+}
+
+static int cmd_list_show(struct seq_file *m, void *v)
+{
+	int i = 0;
+
+	if (!m || !v)
+		return -EIO;
+
+	while (cmd_list[i] != NULL) {
+		seq_printf(m, "%s\n", cmd_list[i]);
+		i++;
+	}
+
+	return 0;
+}
+
+static int cmd_list_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, cmd_list_show, NULL);
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
@@ -2463,6 +2633,13 @@ static const struct proc_ops driver_test_ops = {
 	.proc_lseek = seq_lseek,
 	.proc_release = driver_test_release,
 };
+
+static const struct proc_ops cmd_list_ops = {
+	.proc_open = cmd_list_open,
+	.proc_read = seq_read,
+	.proc_lseek = seq_lseek,
+	.proc_release = single_release,
+};
 #else
 static const struct file_operations driver_test_ops = {
 	.open = driver_test_open,
@@ -2471,6 +2648,13 @@ static const struct file_operations driver_test_ops = {
 	.llseek = seq_lseek,
 	.release = driver_test_release,
 };
+
+static const struct file_operations cmd_list_ops = {
+	.open = cmd_list_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
 #endif
 
 int driver_test_proc_init(struct goodix_ts_core *core_data)
@@ -2478,11 +2662,14 @@ int driver_test_proc_init(struct goodix_ts_core *core_data)
 	struct proc_dir_entry *proc_entry;
 
 	proc_entry = proc_create(
-		"goodix_ts/driver_test", 0777, NULL, &driver_test_ops);
+		"goodix_ts/driver_test", 0660, NULL, &driver_test_ops);
 	if (!proc_entry) {
 		ts_err("failed to create proc entry");
 		return -ENOMEM;
 	}
+
+	proc_entry =
+		proc_create("goodix_ts/cmd_list", 0440, NULL, &cmd_list_ops);
 
 	cd = core_data;
 	return 0;
@@ -2490,5 +2677,6 @@ int driver_test_proc_init(struct goodix_ts_core *core_data)
 
 void driver_test_proc_remove(void)
 {
+	remove_proc_entry("goodix_ts/cmd_list", NULL);
 	remove_proc_entry("goodix_ts/driver_test", NULL);
 }

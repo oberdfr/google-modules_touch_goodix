@@ -256,14 +256,18 @@ power_off:
 int brl_suspend(struct goodix_ts_core *cd)
 {
 	u32 cmd_reg = cd->ic_info.misc.cmd_addr;
-	u8 sleep_cmd[] = { 0x00, 0x00, 0x04, 0x84, 0x88, 0x00 };
+	u8 sleep_cmd[] = { 0x00, 0x00, 0x05, 0xC4, 0x01, 0xCA, 0x00 };
 
 	return cd->hw_ops->write(cd, cmd_reg, sleep_cmd, sizeof(sleep_cmd));
 }
 
 int brl_resume(struct goodix_ts_core *cd)
 {
-	return cd->hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+	u32 cmd_reg = cd->ic_info.misc.cmd_addr;
+	u8 cmd_buf[] = { 0x00, 0x00, 0x05, 0xC4, 0x00, 0xC9, 0x00 };
+
+	return cd->hw_ops->write(cd, cmd_reg, cmd_buf, sizeof(cmd_buf));
+	// return cd->hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
 }
 
 #define GOODIX_GESTURE_CMD_BA 0x12
@@ -967,9 +971,12 @@ static void goodix_parse_finger(
 {
 	unsigned int id = 0, x = 0, y = 0, w = 0;
 	u8 *coor_data;
+	u8 *custom_data;
 	int i;
 
 	coor_data = &buf[IRQ_EVENT_HEAD_LEN];
+	custom_data =
+		&buf[IRQ_EVENT_HEAD_LEN + touch_num * BYTES_PER_POINT + 2];
 	for (i = 0; i < touch_num; i++) {
 		id = (coor_data[0] >> 4) & 0x0F;
 		if (id >= GOODIX_MAX_TOUCH) {
@@ -977,13 +984,23 @@ static void goodix_parse_finger(
 			touch_data->touch_num = 0;
 			return;
 		}
+
 		x = le16_to_cpup((__le16 *)(coor_data + 2));
 		y = le16_to_cpup((__le16 *)(coor_data + 4));
 		w = le16_to_cpup((__le16 *)(coor_data + 6));
 		touch_data->coords[id].status = TS_TOUCH;
 		touch_data->coords[id].x = x;
 		touch_data->coords[id].y = y;
-		touch_data->coords[id].w = w;
+		if (coor_data[1] & 0x01) {
+			touch_data->coords[id].major = custom_data[1];
+			touch_data->coords[id].minor = custom_data[2];
+			touch_data->coords[id].angle =
+				(signed char)custom_data[3];
+		} else {
+			touch_data->coords[id].major = w;
+			touch_data->coords[id].minor = w;
+			touch_data->coords[id].angle = 0;
+		}
 		coor_data += BYTES_PER_POINT;
 	}
 	touch_data->touch_num = touch_num;
@@ -1132,12 +1149,12 @@ static int brl_event_handler(
 	struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
 	struct goodix_ic_info_misc *misc = &cd->ic_info.misc;
 	int pre_read_len;
-	u8 pre_buf[32];
+	u8 pre_buf[36];
 	u8 event_status;
 	int ret;
 
 	pre_read_len = IRQ_EVENT_HEAD_LEN + BYTES_PER_POINT * 2 +
-		       COOR_DATA_CHECKSUM_SIZE;
+		       COOR_DATA_CHECKSUM_SIZE + 4;
 	ret = hw_ops->read(cd, misc->touch_data_addr, pre_buf, pre_read_len);
 	if (ret) {
 		ts_debug("failed get event head data");
