@@ -21,6 +21,7 @@
 #define CMD_GET_SELF_BASEDATA "get_self_base"
 #define CMD_SET_DOUBLE_TAP "set_double_tap"
 #define CMD_SET_SINGLE_TAP "set_single_tap"
+#define CMD_SET_LONG_PRESS "set_long_press"
 #define CMD_SET_CHARGE_MODE "set_charge_mode"
 #define CMD_SET_IRQ_ENABLE "set_irq_enable"
 #define CMD_SET_ESD_ENABLE "set_esd_enable"
@@ -32,16 +33,25 @@
 #define CMD_GET_TX_FREQ "get_tx_freq"
 #define CMD_RESET "reset"
 #define CMD_SET_SENSE_ENABLE "set_sense_enable"
+#define CMD_GET_CONFIG "get_config"
+#define CMD_GET_FW_STATUS "get_fw_status"
+#define CMD_SET_HIGHSENSE_MODE "set_highsense_mode"
+#define CMD_SET_GRIP_DATA "set_grip_data"
+#define CMD_SET_PALM_MODE "set_palm_mode"
+#define CMD_SET_NOISE_MODE "set_noise_mode"
+#define CMD_SET_WATER_MODE "set_water_mode"
 
 char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_SELF_OPEN_TEST, CMD_NOISE_TEST, CMD_AUTO_NOISE_TEST, CMD_SHORT_TEST,
 	CMD_GET_PACKAGE_ID, CMD_GET_VERSION, CMD_GET_RAWDATA, CMD_GET_DIFFDATA,
 	CMD_GET_BASEDATA, CMD_GET_SELF_RAWDATA, CMD_GET_SELF_DIFFDATA,
 	CMD_GET_SELF_BASEDATA, CMD_SET_DOUBLE_TAP, CMD_SET_SINGLE_TAP,
-	CMD_SET_CHARGE_MODE, CMD_SET_IRQ_ENABLE, CMD_SET_ESD_ENABLE,
-	CMD_SET_DEBUG_LOG, CMD_SET_SCAN_MODE, CMD_GET_SCAN_MODE,
-	CMD_SET_CONTINUE_MODE, CMD_GET_CHANNEL_NUM, CMD_GET_TX_FREQ, CMD_RESET,
-	CMD_SET_SENSE_ENABLE, NULL };
+	CMD_SET_LONG_PRESS, CMD_SET_CHARGE_MODE, CMD_SET_IRQ_ENABLE,
+	CMD_SET_ESD_ENABLE, CMD_SET_DEBUG_LOG, CMD_SET_SCAN_MODE,
+	CMD_GET_SCAN_MODE, CMD_SET_CONTINUE_MODE, CMD_GET_CHANNEL_NUM,
+	CMD_GET_TX_FREQ, CMD_RESET, CMD_SET_SENSE_ENABLE, CMD_GET_CONFIG,
+	CMD_GET_FW_STATUS, CMD_SET_HIGHSENSE_MODE, CMD_SET_GRIP_DATA,
+	CMD_SET_PALM_MODE, CMD_SET_NOISE_MODE, CMD_SET_WATER_MODE, NULL };
 
 /* test limits keyword */
 #define CSV_TP_SPECIAL_RAW_MIN "special_raw_min"
@@ -53,6 +63,10 @@ char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 #define CSV_TP_NOISE_LIMIT "noise_data_limit"
 #define CSV_TP_SELFNOISE_LIMIT "noise_selfdata_limit"
 #define CSV_TP_TEST_CONFIG "test_config"
+
+#define PALM_FUNC 0
+#define NOISE_FUNC 1
+#define WATER_FUNC 2
 
 #define SHORT_SIZE 100
 #define LARGE_SIZE 4096
@@ -991,140 +1005,140 @@ static void goodix_save_header(void)
 	index += sprintf(&rbuf[index], "</ItemList>\n");
 }
 
-static void goodix_save_limits(void)
-{
-	int tx = cd->ic_info.parm.drv_num;
-	int rx = cd->ic_info.parm.sen_num;
-	int i;
-	int chn1;
-	int chn2;
-	int r;
-
-	index += sprintf(&rbuf[index], "<TestItems>\n");
-
-	/* save short result */
-	if (ts_test->item[GTP_SHORT_TEST]) {
-		index += sprintf(&rbuf[index], "<Item name=\"Short Test\">\n");
-		index += sprintf(&rbuf[index], "<ShortNum>%d</ShortNum>\n",
-			ts_test->short_res.short_num);
-		for (i = 0; i < ts_test->short_res.short_num; i++) {
-			chn1 = ts_test->short_res.short_msg[4 * i];
-			chn2 = ts_test->short_res.short_msg[4 * i + 1];
-			r = (ts_test->short_res.short_msg[4 * i + 2] << 8) +
-			    ts_test->short_res.short_msg[4 * i + 3];
-			if (chn1 == CHN_VDD)
-				index += sprintf(&rbuf[index],
-					"<ShortMess Chn1=\"VDD\" ");
-			else if (chn1 == CHN_GND)
-				index += sprintf(&rbuf[index],
-					"<ShortMess Chn1=\"GND\" ");
-			else if (chn1 & DRV_CHANNEL_FLAG)
-				index += sprintf(&rbuf[index],
-					"<ShortMess Chn1=\"Tx%d\" ",
-					chn1 & 0x7f);
-			else
-				index += sprintf(&rbuf[index],
-					"<ShortMess Chn1=\"Rx%d\" ",
-					chn1 & 0x7f);
-			if (chn2 == CHN_VDD)
-				index += sprintf(&rbuf[index],
-					"Chn2=\"VDD\" ShortResistor= \"%dKom\"/>\n",
-					r);
-			else if (chn2 == CHN_GND)
-				index += sprintf(&rbuf[index],
-					"Chn2=\"GND\" ShortResistor= \"%dKom\"/>\n",
-					r);
-			else if (chn2 & DRV_CHANNEL_FLAG)
-				index += sprintf(&rbuf[index],
-					"Chn2=\"Tx%d\" ShortResistor= \"%dKom\"/>\n",
-					chn2 & 0x7f, r);
-			else
-				index += sprintf(&rbuf[index],
-					"Chn2=\"Rx%d\" ShortResistor= \"%dKom\"/>\n",
-					chn2 & 0x7f, r);
-		}
-		index += sprintf(&rbuf[index], "</Item>\n");
-	}
-
-	/* save open limits */
-	if (ts_test->item[GTP_CAP_TEST]) {
-		index += sprintf(
-			&rbuf[index], "<Item name=\"Rawdata Test Sets\">\n");
-		index += sprintf(&rbuf[index],
-			"<TotalFrameCnt>%d</TotalFrameCnt>\n", raw_data_cnt);
-		/* rawdata max limit */
-		index += sprintf(&rbuf[index], "<MaxRawLimit>\n");
-		for (i = 0; i < tx * rx; i++) {
-			index += sprintf(
-				&rbuf[index], "%d,", ts_test->max_limits[i]);
-			if ((i + 1) % tx == 0)
-				index += sprintf(&rbuf[index], "\n");
-		}
-		index += sprintf(&rbuf[index], "</MaxRawLimit>\n");
-		/* rawdata min limit */
-		index += sprintf(&rbuf[index], "<MinRawLimit>\n");
-		for (i = 0; i < tx * rx; i++) {
-			index += sprintf(
-				&rbuf[index], "%d,", ts_test->min_limits[i]);
-			if ((i + 1) % tx == 0)
-				index += sprintf(&rbuf[index], "\n");
-		}
-		index += sprintf(&rbuf[index], "</MinRawLimit>\n");
-		/* Max Accord limit */
-		index += sprintf(&rbuf[index], "<MaxAccordLimit>\n");
-		for (i = 0; i < tx * rx; i++) {
-			index += sprintf(&rbuf[index], "%d,",
-				ts_test->deviation_limits[i]);
-			if ((i + 1) % tx == 0)
-				index += sprintf(&rbuf[index], "\n");
-		}
-		index += sprintf(&rbuf[index], "</MaxAccordLimit>\n");
-		index += sprintf(&rbuf[index], "</Item>\n");
-	}
-
-	/* save noise limit */
-	if (ts_test->item[GTP_NOISE_TEST]) {
-		index += sprintf(
-			&rbuf[index], "<Item name=\"Diffdata Test Sets\">\n");
-		index += sprintf(&rbuf[index],
-			"<TotalFrameCnt>%d</TotalFrameCnt>\n", noise_data_cnt);
-		index += sprintf(&rbuf[index],
-			"<MaxJitterLimit>%d</MaxJitterLimit>\n",
-			ts_test->noise_threshold);
-		index += sprintf(&rbuf[index], "</Item>\n");
-	}
-
-	/* save self rawdata limit */
-	if (ts_test->item[GTP_SELFCAP_TEST]) {
-		index += sprintf(&rbuf[index],
-			"<Item name=\"Self Rawdata Test Sets\">\n");
-		index += sprintf(
-			&rbuf[index], "<TotalFrameCnt>1</TotalFrameCnt>\n");
-		index += sprintf(&rbuf[index], "<MaxRawLimit>\n");
-		for (i = 0; i < tx + rx; i++) {
-			index += sprintf(&rbuf[index], "%d,",
-				ts_test->self_max_limits[i]);
-			if ((i + 1) % tx == 0)
-				index += sprintf(&rbuf[index], "\n");
-		}
-		if ((tx + rx) % tx != 0)
-			index += sprintf(&rbuf[index], "\n");
-		index += sprintf(&rbuf[index], "</MaxRawLimit>\n");
-		index += sprintf(&rbuf[index], "<MinRawLimit>\n");
-		for (i = 0; i < tx + rx; i++) {
-			index += sprintf(&rbuf[index], "%d,",
-				ts_test->self_min_limits[i]);
-			if ((i + 1) % tx == 0)
-				index += sprintf(&rbuf[index], "\n");
-		}
-		if ((tx + rx) % tx != 0)
-			index += sprintf(&rbuf[index], "\n");
-		index += sprintf(&rbuf[index], "</MinRawLimit>\n");
-		index += sprintf(&rbuf[index], "</Item>\n");
-	}
-
-	index += sprintf(&rbuf[index], "</TestItems>\n");
-}
+//static void goodix_save_limits(void)
+//{
+//	int tx = cd->ic_info.parm.drv_num;
+//	int rx = cd->ic_info.parm.sen_num;
+//	int i;
+//	int chn1;
+//	int chn2;
+//	int r;
+//
+//	index += sprintf(&rbuf[index], "<TestItems>\n");
+//
+//	/* save short result */
+//	if (ts_test->item[GTP_SHORT_TEST]) {
+//		index += sprintf(&rbuf[index], "<Item name=\"Short Test\">\n");
+//		index += sprintf(&rbuf[index], "<ShortNum>%d</ShortNum>\n",
+//			ts_test->short_res.short_num);
+//		for (i = 0; i < ts_test->short_res.short_num; i++) {
+//			chn1 = ts_test->short_res.short_msg[4 * i];
+//			chn2 = ts_test->short_res.short_msg[4 * i + 1];
+//			r = (ts_test->short_res.short_msg[4 * i + 2] << 8) +
+//			    ts_test->short_res.short_msg[4 * i + 3];
+//			if (chn1 == CHN_VDD)
+//				index += sprintf(&rbuf[index],
+//					"<ShortMess Chn1=\"VDD\" ");
+//			else if (chn1 == CHN_GND)
+//				index += sprintf(&rbuf[index],
+//					"<ShortMess Chn1=\"GND\" ");
+//			else if (chn1 & DRV_CHANNEL_FLAG)
+//				index += sprintf(&rbuf[index],
+//					"<ShortMess Chn1=\"Tx%d\" ",
+//					chn1 & 0x7f);
+//			else
+//				index += sprintf(&rbuf[index],
+//					"<ShortMess Chn1=\"Rx%d\" ",
+//					chn1 & 0x7f);
+//			if (chn2 == CHN_VDD)
+//				index += sprintf(&rbuf[index],
+//					"Chn2=\"VDD\" ShortResistor= \"%dKom\"/>\n",
+//					r);
+//			else if (chn2 == CHN_GND)
+//				index += sprintf(&rbuf[index],
+//					"Chn2=\"GND\" ShortResistor= \"%dKom\"/>\n",
+//					r);
+//			else if (chn2 & DRV_CHANNEL_FLAG)
+//				index += sprintf(&rbuf[index],
+//					"Chn2=\"Tx%d\" ShortResistor= \"%dKom\"/>\n",
+//					chn2 & 0x7f, r);
+//			else
+//				index += sprintf(&rbuf[index],
+//					"Chn2=\"Rx%d\" ShortResistor= \"%dKom\"/>\n",
+//					chn2 & 0x7f, r);
+//		}
+//		index += sprintf(&rbuf[index], "</Item>\n");
+//	}
+//
+//	/* save open limits */
+//	if (ts_test->item[GTP_CAP_TEST]) {
+//		index += sprintf(
+//			&rbuf[index], "<Item name=\"Rawdata Test Sets\">\n");
+//		index += sprintf(&rbuf[index],
+//			"<TotalFrameCnt>%d</TotalFrameCnt>\n", raw_data_cnt);
+//		/* rawdata max limit */
+//		index += sprintf(&rbuf[index], "<MaxRawLimit>\n");
+//		for (i = 0; i < tx * rx; i++) {
+//			index += sprintf(
+//				&rbuf[index], "%d,", ts_test->max_limits[i]);
+//			if ((i + 1) % tx == 0)
+//				index += sprintf(&rbuf[index], "\n");
+//		}
+//		index += sprintf(&rbuf[index], "</MaxRawLimit>\n");
+//		/* rawdata min limit */
+//		index += sprintf(&rbuf[index], "<MinRawLimit>\n");
+//		for (i = 0; i < tx * rx; i++) {
+//			index += sprintf(
+//				&rbuf[index], "%d,", ts_test->min_limits[i]);
+//			if ((i + 1) % tx == 0)
+//				index += sprintf(&rbuf[index], "\n");
+//		}
+//		index += sprintf(&rbuf[index], "</MinRawLimit>\n");
+//		/* Max Accord limit */
+//		index += sprintf(&rbuf[index], "<MaxAccordLimit>\n");
+//		for (i = 0; i < tx * rx; i++) {
+//			index += sprintf(&rbuf[index], "%d,",
+//				ts_test->deviation_limits[i]);
+//			if ((i + 1) % tx == 0)
+//				index += sprintf(&rbuf[index], "\n");
+//		}
+//		index += sprintf(&rbuf[index], "</MaxAccordLimit>\n");
+//		index += sprintf(&rbuf[index], "</Item>\n");
+//	}
+//
+//	/* save noise limit */
+//	if (ts_test->item[GTP_NOISE_TEST]) {
+//		index += sprintf(
+//			&rbuf[index], "<Item name=\"Diffdata Test Sets\">\n");
+//		index += sprintf(&rbuf[index],
+//			"<TotalFrameCnt>%d</TotalFrameCnt>\n", noise_data_cnt);
+//		index += sprintf(&rbuf[index],
+//			"<MaxJitterLimit>%d</MaxJitterLimit>\n",
+//			ts_test->noise_threshold);
+//		index += sprintf(&rbuf[index], "</Item>\n");
+//	}
+//
+//	/* save self rawdata limit */
+//	if (ts_test->item[GTP_SELFCAP_TEST]) {
+//		index += sprintf(&rbuf[index],
+//			"<Item name=\"Self Rawdata Test Sets\">\n");
+//		index += sprintf(
+//			&rbuf[index], "<TotalFrameCnt>1</TotalFrameCnt>\n");
+//		index += sprintf(&rbuf[index], "<MaxRawLimit>\n");
+//		for (i = 0; i < tx + rx; i++) {
+//			index += sprintf(&rbuf[index], "%d,",
+//				ts_test->self_max_limits[i]);
+//			if ((i + 1) % tx == 0)
+//				index += sprintf(&rbuf[index], "\n");
+//		}
+//		if ((tx + rx) % tx != 0)
+//			index += sprintf(&rbuf[index], "\n");
+//		index += sprintf(&rbuf[index], "</MaxRawLimit>\n");
+//		index += sprintf(&rbuf[index], "<MinRawLimit>\n");
+//		for (i = 0; i < tx + rx; i++) {
+//			index += sprintf(&rbuf[index], "%d,",
+//				ts_test->self_min_limits[i]);
+//			if ((i + 1) % tx == 0)
+//				index += sprintf(&rbuf[index], "\n");
+//		}
+//		if ((tx + rx) % tx != 0)
+//			index += sprintf(&rbuf[index], "\n");
+//		index += sprintf(&rbuf[index], "</MinRawLimit>\n");
+//		index += sprintf(&rbuf[index], "</Item>\n");
+//	}
+//
+//	index += sprintf(&rbuf[index], "</TestItems>\n");
+//}
 
 static void goodix_data_cal(s16 *data, size_t data_size, s16 *stat_result)
 {
@@ -1242,12 +1256,38 @@ static void goodix_save_tail(void)
 	index += sprintf(&rbuf[index], "</TESTLOG>\n");
 }
 
-static void goodix_save_test_result(void)
+static void goodix_save_test_result(bool is_brief)
 {
-	goodix_save_header();
-	goodix_save_limits();
-	goodix_save_data();
-	goodix_save_tail();
+	if (is_brief) {
+		if (ts_test->item[GTP_CAP_TEST]) {
+			index += sprintf(&rbuf[index], "Open test:\n");
+			index += sprintf(&rbuf[index], "%s\n",
+				ts_test->result[GTP_CAP_TEST] ? "PASS"
+							      : "FAIL");
+		}
+		if (ts_test->item[GTP_SHORT_TEST]) {
+			index += sprintf(&rbuf[index], "Short test:\n");
+			index += sprintf(&rbuf[index], "%s\n",
+				ts_test->result[GTP_SHORT_TEST] ? "PASS"
+								: "FAIL");
+		}
+		if (ts_test->item[GTP_NOISE_TEST]) {
+			index += sprintf(&rbuf[index], "Noise test:\n");
+			index += sprintf(&rbuf[index], "%s\n",
+				ts_test->result[GTP_NOISE_TEST] ? "PASS"
+								: "FAIL");
+		}
+		if (ts_test->item[GTP_SELFCAP_TEST]) {
+			index += sprintf(&rbuf[index], "Self test:\n");
+			index += sprintf(&rbuf[index], "%s\n",
+				ts_test->result[GTP_SELFCAP_TEST] ? "PASS"
+								  : "FAIL");
+		}
+	} else {
+		goodix_save_header();
+		goodix_save_data();
+		goodix_save_tail();
+	}
 }
 
 static void goto_next_line(char **ptr)
@@ -1793,7 +1833,7 @@ exit:
 	return ret;
 }
 
-static int goodix_auto_test(void)
+static int goodix_auto_test(bool is_brief)
 {
 	struct goodix_ts_cmd temp_cmd;
 	int ret;
@@ -1839,7 +1879,7 @@ static int goodix_auto_test(void)
 
 	cd->hw_ops->irq_enable(cd, true);
 	goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
-	goodix_save_test_result();
+	goodix_save_test_result(is_brief);
 	return 0;
 }
 
@@ -1854,6 +1894,7 @@ static void goodix_auto_noise_test(u16 cnt, int threshold)
 	int tmp_val;
 	u8 status;
 	int retry = 10;
+	int err_cnt = 0;
 	int i;
 
 	raw_addr = cd->ic_info.misc.frame_data_addr +
@@ -1885,15 +1926,46 @@ static void goodix_auto_noise_test(u16 cnt, int threshold)
 	}
 
 	cd->hw_ops->read(cd, raw_addr, (u8 *)tmp_buf, tx * rx * 2);
+	goodix_rotate_abcd2cbad(tx, rx, tmp_buf);
+	index += sprintf(&rbuf[index], "max:\n");
 	for (i = 0; i < tx * rx; i++) {
 		tmp_val = tmp_buf[i];
-		tmp_val = ABS(tmp_val);
-		if (tmp_val > threshold) {
-			index = sprintf(rbuf, "FAIL\n");
-			goto exit;
-		}
+		index += sprintf(&rbuf[index], "%3d,", tmp_val);
+		if ((i + 1) % tx == 0)
+			index += sprintf(&rbuf[index], "\n");
+		if (ABS(tmp_val) > threshold)
+			err_cnt++;
 	}
-	index = sprintf(rbuf, "PASS\n");
+
+	status = 0;
+	cd->hw_ops->write(cd, sync_addr, &status, 1);
+	retry = 10;
+	while (retry--) {
+		cd->hw_ops->read(cd, sync_addr, &status, 1);
+		if (status == 0x80)
+			break;
+		usleep_range(5000, 5100);
+	}
+	if (retry < 0) {
+		ts_err("noise data not ready, status[%x]", status);
+		goto exit;
+	}
+	cd->hw_ops->read(cd, raw_addr, (u8 *)tmp_buf, tx * rx * 2);
+	goodix_rotate_abcd2cbad(tx, rx, tmp_buf);
+	index += sprintf(&rbuf[index], "min:\n");
+	for (i = 0; i < tx * rx; i++) {
+		tmp_val = tmp_buf[i];
+		index += sprintf(&rbuf[index], "%3d,", tmp_val);
+		if ((i + 1) % tx == 0)
+			index += sprintf(&rbuf[index], "\n");
+		if (ABS(tmp_val) > threshold)
+			err_cnt++;
+	}
+
+	if (err_cnt > 0)
+		index += sprintf(&rbuf[index], "Result: FAIL\n");
+	else
+		index += sprintf(&rbuf[index], "Result: PASS\n");
 
 exit:
 	cd->hw_ops->reset(cd, 100);
@@ -2053,19 +2125,31 @@ static void goodix_set_scan_mode(u8 val)
 	struct goodix_ts_cmd temp_cmd;
 
 	if (val == 0) {
+		temp_cmd.len = 6;
+		temp_cmd.cmd = 0x25;
+		temp_cmd.data[0] = 0;
+		temp_cmd.data[1] = 0;
 		ts_info("set scan mode to default");
 		index = sprintf(rbuf, "set scan mode to default\n");
 	} else if (val == 1) {
+		temp_cmd.len = 5;
+		temp_cmd.cmd = 0x9F;
+		temp_cmd.data[0] = 1;
 		ts_info("set scan mode to idle");
 		index = sprintf(rbuf, "set scan mode to idle\n");
 	} else {
+		temp_cmd.len = 5;
+		temp_cmd.cmd = 0x9F;
+		temp_cmd.data[0] = 0;
+		cd->hw_ops->send_cmd(cd, &temp_cmd);
+		temp_cmd.len = 6;
+		temp_cmd.cmd = 0x25;
+		temp_cmd.data[0] = 0xff;
+		temp_cmd.data[1] = 0xff;
 		ts_info("set scan mode to active");
 		index = sprintf(rbuf, "set scan mode to active\n");
 	}
 
-	temp_cmd.len = 5;
-	temp_cmd.cmd = 0x9F;
-	temp_cmd.data[0] = val;
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 }
 
@@ -2119,8 +2203,148 @@ static void goodix_set_continue_mode(u8 val)
 	}
 
 	temp_cmd.len = 5;
-	temp_cmd.cmd = 0xC3;
+	temp_cmd.cmd = 0xC6;
 	temp_cmd.data[0] = val;
+	cd->hw_ops->send_cmd(cd, &temp_cmd);
+}
+
+static void goodix_read_config(void)
+{
+	int ret;
+	int i;
+	u8 cfg_buf[2500];
+
+	ret = cd->hw_ops->read_config(cd, cfg_buf, sizeof(cfg_buf));
+	if (ret < 0) {
+		ts_err("read config failed");
+		return;
+	}
+
+	for (i = 0; i < 200; i++) { // only print 200 bytes
+		index += sprintf(&rbuf[index], "%02x,", cfg_buf[i]);
+		if ((i + 1) % 20 == 0)
+			index += sprintf(&rbuf[index], "\n");
+	}
+}
+
+static void goodix_get_fw_status(void)
+{
+	u32 status_addr;
+	u32 noise_lv_addr;
+	u32 offset;
+	u8 val;
+
+	offset = cd->ic_info.misc.frame_data_addr +
+		 cd->ic_info.misc.frame_data_head_len +
+		 cd->ic_info.misc.fw_attr_len;
+	status_addr = offset + 38;
+	noise_lv_addr = offset + 65;
+
+	cd->hw_ops->read(cd, status_addr, &val, 1);
+	ts_info("addr:0x%04x fw_status:0x%02X", status_addr, val);
+	index += sprintf(
+		&rbuf[index], "touch[%d] ", (val & (0x01 << 0)) ? 1 : 0);
+	index +=
+		sprintf(&rbuf[index], "game[%d] ", (val & (0x01 << 1)) ? 1 : 0);
+	index +=
+		sprintf(&rbuf[index], "palm[%d] ", (val & (0x01 << 2)) ? 1 : 0);
+	index += sprintf(
+		&rbuf[index], "water[%d] ", (val & (0x01 << 3)) ? 1 : 0);
+	index += sprintf(
+		&rbuf[index], "charge[%d] ", (val & (0x01 << 4)) ? 1 : 0);
+	index += sprintf(
+		&rbuf[index], "lowtemp[%d] ", (val & (0x01 << 5)) ? 1 : 0);
+
+	cd->hw_ops->read(cd, noise_lv_addr, &val, 1);
+	ts_info("noise level addr: 0x%04x", noise_lv_addr);
+	index += sprintf(&rbuf[index], "noise-lv[%d]\n", val);
+}
+
+static void goodix_set_highsense_mode(u8 val)
+{
+	struct goodix_ts_cmd temp_cmd;
+	static bool flag = false;
+
+	if (val == 0 && flag) {
+		flag = false;
+		ts_info("exit highsense mode");
+		index = sprintf(rbuf, "exit highsense mode\n");
+	} else if (val == 1 && !flag) {
+		flag = true;
+		ts_info("enter highsense mode");
+		index = sprintf(rbuf, "enter highsense mode\n");
+	} else {
+		ts_info("have already %s", val ? "ON" : "OFF");
+		return;
+	}
+
+	temp_cmd.len = 5;
+	temp_cmd.cmd = 0x72;
+	temp_cmd.data[0] = val;
+	cd->hw_ops->send_cmd(cd, &temp_cmd);
+}
+
+static void goodix_set_grip_data(u8 val)
+{
+	struct goodix_ts_cmd temp_cmd;
+
+	if (val == 0) {
+		ts_info("portrait mode");
+		index = sprintf(rbuf, "portrait mode\n");
+		temp_cmd.len = 4;
+		temp_cmd.cmd = 0x18;
+	} else if (val == 1) {
+		ts_info("landscape left");
+		index = sprintf(rbuf, "landscape left\n");
+		temp_cmd.len = 5;
+		temp_cmd.cmd = 0x17;
+		temp_cmd.data[0] = 0;
+	} else if (val == 2) {
+		ts_info("landscape right");
+		index = sprintf(rbuf, "landscape right\n");
+		temp_cmd.len = 5;
+		temp_cmd.cmd = 0x17;
+		temp_cmd.data[0] = 1;
+	} else {
+		ts_err("invalid grip data, %d", val);
+		return;
+	}
+
+	cd->hw_ops->send_cmd(cd, &temp_cmd);
+}
+
+static void goodix_set_custom_mode(u8 type, u8 val)
+{
+	struct goodix_ts_cmd temp_cmd;
+
+	temp_cmd.len = 6;
+	temp_cmd.cmd = 0xC7;
+	temp_cmd.data[0] = type;
+
+	if (type == PALM_FUNC)
+		index += sprintf(&rbuf[index], "palm ");
+	else if (type == NOISE_FUNC)
+		index += sprintf(&rbuf[index], "noise ");
+	else if (type == WATER_FUNC)
+		index += sprintf(&rbuf[index], "water ");
+	else {
+		ts_err("invalid type, %d", type);
+		return;
+	}
+
+	if (val == 1) {
+		ts_info("restore");
+		index += sprintf(&rbuf[index], "restore\n");
+		temp_cmd.data[1] = 0;
+	} else if (val == 0) {
+		ts_info("disabled");
+		index += sprintf(&rbuf[index], "disabled\n");
+		temp_cmd.data[1] = 1;
+	} else {
+		ts_err("invalid val, %d", val);
+		return;
+	}
+
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 }
 
@@ -2155,9 +2379,9 @@ static ssize_t driver_test_write(
 
 	if (!strncmp(p, CMD_FW_UPDATE, strlen(CMD_FW_UPDATE))) {
 		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
-		ret = goodix_do_fw_update(
-			NULL, UPDATE_MODE_BLOCK | UPDATE_MODE_FORCE |
-				      UPDATE_MODE_SRC_REQUEST);
+		ret = goodix_do_fw_update(cd->ic_configs[CONFIG_TYPE_NORMAL],
+			UPDATE_MODE_BLOCK | UPDATE_MODE_FORCE |
+				UPDATE_MODE_SRC_REQUEST);
 		if (ret < 0) {
 			index = sprintf(rbuf, "%s: NG\n", CMD_FW_UPDATE);
 		} else {
@@ -2287,6 +2511,33 @@ static ssize_t driver_test_write(
 		goto exit;
 	}
 
+	if (!strncmp(p, CMD_SET_LONG_PRESS, strlen(CMD_SET_LONG_PRESS))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_LONG_PRESS);
+			goto exit;
+		}
+		if (kstrtos32(p, 10, &cmd_val)) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_LONG_PRESS);
+			goto exit;
+		}
+		if (cmd_val == 0) {
+			cd->gesture_type &= ~GESTURE_FOD_PRESS;
+			index = sprintf(
+				rbuf, "%s: disable OK\n", CMD_SET_LONG_PRESS);
+			ts_info("disable single tap");
+		} else {
+			cd->gesture_type |= GESTURE_FOD_PRESS;
+			index = sprintf(
+				rbuf, "%s: enable OK\n", CMD_SET_LONG_PRESS);
+			ts_info("enable single tap");
+		}
+		goto exit;
+	}
+
 	if (!strncmp(p, CMD_SET_IRQ_ENABLE, strlen(CMD_SET_IRQ_ENABLE))) {
 		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
 		token = strsep(&p, ",");
@@ -2365,7 +2616,7 @@ static ssize_t driver_test_write(
 	if (!strncmp(p, CMD_AUTO_TEST, strlen(CMD_AUTO_TEST))) {
 		raw_data_cnt = 16;
 		noise_data_cnt = 1;
-		rbuf = kzalloc(HUGE_SIZE, GFP_KERNEL);
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
 		ret = malloc_test_resource();
 		if (ret < 0) {
 			ts_err("malloc test resource failed");
@@ -2375,7 +2626,7 @@ static ssize_t driver_test_write(
 		ts_test->item[GTP_NOISE_TEST] = true;
 		ts_test->item[GTP_SELFCAP_TEST] = true;
 		ts_test->item[GTP_SHORT_TEST] = true;
-		goodix_auto_test();
+		goodix_auto_test(true);
 		goto exit;
 	}
 
@@ -2448,7 +2699,7 @@ static ssize_t driver_test_write(
 			goto exit;
 		}
 		ts_test->item[GTP_NOISE_TEST] = true;
-		goodix_auto_test();
+		goodix_auto_test(false);
 		goto exit;
 	}
 
@@ -2471,7 +2722,7 @@ static ssize_t driver_test_write(
 			ts_err("%s: invalid cmd param", CMD_AUTO_NOISE_TEST);
 			goto exit;
 		}
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = kzalloc(HUGE_SIZE, GFP_KERNEL);
 		goodix_auto_noise_test(cmd_val, cmd_val2);
 		goto exit;
 	}
@@ -2570,7 +2821,7 @@ static ssize_t driver_test_write(
 		}
 		ts_test->item[GTP_CAP_TEST] = true;
 		ts_test->freq = cmd_val2;
-		goodix_auto_test();
+		goodix_auto_test(false);
 		goto exit;
 	}
 
@@ -2582,7 +2833,7 @@ static ssize_t driver_test_write(
 			goto exit;
 		}
 		ts_test->item[GTP_SELFCAP_TEST] = true;
-		goodix_auto_test();
+		goodix_auto_test(false);
 		goto exit;
 	}
 
@@ -2594,7 +2845,110 @@ static ssize_t driver_test_write(
 			goto exit;
 		}
 		ts_test->item[GTP_SHORT_TEST] = true;
-		goodix_auto_test();
+		goodix_auto_test(false);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_GET_CONFIG, strlen(CMD_GET_CONFIG))) {
+		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
+		goodix_read_config();
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_GET_FW_STATUS, strlen(CMD_GET_FW_STATUS))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		goodix_get_fw_status();
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_SET_HIGHSENSE_MODE,
+		    strlen(CMD_SET_HIGHSENSE_MODE))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_HIGHSENSE_MODE);
+			goto exit;
+		}
+		if (kstrtos32(p, 10, &cmd_val)) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_HIGHSENSE_MODE);
+			goto exit;
+		}
+		if (cmd_val > 1 || cmd_val < 0) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_HIGHSENSE_MODE);
+			goto exit;
+		}
+		goodix_set_highsense_mode(cmd_val);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_SET_GRIP_DATA, strlen(CMD_SET_GRIP_DATA))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_GRIP_DATA);
+			goto exit;
+		}
+		if (kstrtos32(p, 10, &cmd_val)) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_GRIP_DATA);
+			goto exit;
+		}
+		goodix_set_grip_data(cmd_val);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_SET_PALM_MODE, strlen(CMD_SET_PALM_MODE))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_PALM_MODE);
+			goto exit;
+		}
+		if (kstrtos32(p, 10, &cmd_val)) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_PALM_MODE);
+			goto exit;
+		}
+		goodix_set_custom_mode(PALM_FUNC, cmd_val);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_SET_NOISE_MODE, strlen(CMD_SET_NOISE_MODE))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_NOISE_MODE);
+			goto exit;
+		}
+		if (kstrtos32(p, 10, &cmd_val)) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_NOISE_MODE);
+			goto exit;
+		}
+		goodix_set_custom_mode(NOISE_FUNC, cmd_val);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_SET_WATER_MODE, strlen(CMD_SET_WATER_MODE))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_WATER_MODE);
+			goto exit;
+		}
+		if (kstrtos32(p, 10, &cmd_val)) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_WATER_MODE);
+			goto exit;
+		}
+		goodix_set_custom_mode(WATER_FUNC, cmd_val);
 		goto exit;
 	}
 

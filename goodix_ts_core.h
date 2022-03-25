@@ -49,7 +49,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.0.4"
+#define GOODIX_DRIVER_VERSION "v1.0.5"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -384,7 +384,7 @@ enum touch_point_status {
 /* coordinate package */
 struct goodix_ts_coords {
 	int status; /* NONE, RELEASE, TOUCH */
-	unsigned int x, y, major, minor, p;
+	unsigned int x, y, major, minor, p, w;
 	signed char angle;
 };
 

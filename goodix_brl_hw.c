@@ -275,13 +275,20 @@ int brl_resume(struct goodix_ts_core *cd)
 int brl_gesture(struct goodix_ts_core *cd, int gesture_type)
 {
 	struct goodix_ts_cmd cmd;
+	u8 val = 0xff;
+
+	if (cd->gesture_type & GESTURE_SINGLE_TAP)
+		val &= ~(0x01 << 0);
+	if (cd->gesture_type & GESTURE_FOD_PRESS)
+		val &= ~(0x01 << 1);
 
 	if (cd->bus->ic_type == IC_TYPE_BERLIN_A)
 		cmd.cmd = GOODIX_GESTURE_CMD_BA;
 	else
 		cmd.cmd = GOODIX_GESTURE_CMD;
-	cmd.len = 5;
-	cmd.data[0] = gesture_type;
+	cmd.len = 6;
+	cmd.data[0] = 0xff;
+	cmd.data[1] = val;
 	if (cd->hw_ops->send_cmd(cd, &cmd))
 		ts_err("failed send gesture cmd");
 
@@ -375,7 +382,8 @@ static int brl_send_cmd(struct goodix_ts_core *cd, struct goodix_ts_cmd *cmd)
 			ts_debug("cmd ack data %*ph", (int)sizeof(cmd_ack),
 				cmd_ack.buf);
 			if (cmd_ack.ack == CMD_ACK_OK) {
-				msleep(40); // wait for cmd response
+				// msleep(40);		// wait for cmd response
+				usleep_range(6000, 6100);
 				return 0;
 			}
 			if (cmd_ack.ack == CMD_ACK_BUSY ||
@@ -956,7 +964,7 @@ static int brl_esd_check(struct goodix_ts_core *cd)
 }
 
 #define IRQ_EVENT_HEAD_LEN 8
-#define BYTES_PER_POINT 8
+#define BYTES_PER_POINT 12
 #define COOR_DATA_CHECKSUM_SIZE 2
 
 #define GOODIX_TOUCH_EVENT 0x80
@@ -965,18 +973,15 @@ static int brl_esd_check(struct goodix_ts_core *cd)
 #define GOODIX_FP_EVENT 0x08
 #define POINT_TYPE_STYLUS_HOVER 0x01
 #define POINT_TYPE_STYLUS 0x03
-
+static int point_struct_len;
 static void goodix_parse_finger(
 	struct goodix_touch_data *touch_data, u8 *buf, int touch_num)
 {
 	unsigned int id = 0, x = 0, y = 0, w = 0;
 	u8 *coor_data;
-	u8 *custom_data;
 	int i;
 
 	coor_data = &buf[IRQ_EVENT_HEAD_LEN];
-	custom_data =
-		&buf[IRQ_EVENT_HEAD_LEN + touch_num * BYTES_PER_POINT + 2];
 	for (i = 0; i < touch_num; i++) {
 		id = (coor_data[0] >> 4) & 0x0F;
 		if (id >= GOODIX_MAX_TOUCH) {
@@ -985,23 +990,23 @@ static void goodix_parse_finger(
 			return;
 		}
 
+		touch_data->coords[id].status = TS_TOUCH;
 		x = le16_to_cpup((__le16 *)(coor_data + 2));
 		y = le16_to_cpup((__le16 *)(coor_data + 4));
 		w = le16_to_cpup((__le16 *)(coor_data + 6));
-		touch_data->coords[id].status = TS_TOUCH;
 		touch_data->coords[id].x = x;
 		touch_data->coords[id].y = y;
-		if (coor_data[1] & 0x01) {
-			touch_data->coords[id].major = custom_data[1];
-			touch_data->coords[id].minor = custom_data[2];
+		touch_data->coords[id].w = w;
+
+		if (point_struct_len == 12) {
+			touch_data->coords[id].p = coor_data[8];
+			touch_data->coords[id].major = coor_data[9];
+			touch_data->coords[id].minor = coor_data[10];
 			touch_data->coords[id].angle =
-				(signed char)custom_data[3];
-		} else {
-			touch_data->coords[id].major = w;
-			touch_data->coords[id].minor = w;
-			touch_data->coords[id].angle = 0;
+				(signed char)coor_data[11];
 		}
-		coor_data += BYTES_PER_POINT;
+
+		coor_data += point_struct_len;
 	}
 	touch_data->touch_num = touch_num;
 }
@@ -1096,13 +1101,14 @@ static int goodix_touch_handler(struct goodix_ts_core *cd,
 				return -EINVAL;
 			}
 		} else {
+			point_struct_len = misc->point_struct_len;
 			ret = checksum_cmp(&buffer[IRQ_EVENT_HEAD_LEN],
-				touch_num * BYTES_PER_POINT + 2,
+				touch_num * point_struct_len + 2,
 				CHECKSUM_MODE_U8_LE);
 			if (ret) {
 				ts_debug("touch data checksum error");
 				ts_debug("data:%*ph",
-					touch_num * BYTES_PER_POINT + 2,
+					touch_num * point_struct_len + 2,
 					&buffer[IRQ_EVENT_HEAD_LEN]);
 				return -EINVAL;
 			}
@@ -1149,7 +1155,7 @@ static int brl_event_handler(
 	struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
 	struct goodix_ic_info_misc *misc = &cd->ic_info.misc;
 	int pre_read_len;
-	u8 pre_buf[36];
+	u8 pre_buf[38];
 	u8 event_status;
 	int ret;
 
@@ -1438,7 +1444,7 @@ int brl_set_scan_mode(struct goodix_ts_core *cd, int mode)
 	return 0;
 }
 
-#define GOODIX_CMD_SET_CONTINUOUSLY_REPORT_ENABLED 0xC3
+#define GOODIX_CMD_SET_CONTINUOUSLY_REPORT_ENABLED 0xC6
 int brl_set_continuously_report_enabled(struct goodix_ts_core *cd, bool enabled)
 {
 	struct goodix_ts_cmd cmd;

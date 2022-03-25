@@ -1221,9 +1221,11 @@ static void goodix_ts_report_finger(
 	for (i = 0; i < GOODIX_MAX_TOUCH; i++) {
 		if (touch_data->coords[i].status == TS_TOUCH) {
 			ts_debug(
-				"report: id[%d], x %d, y %d, major %d, minor %d, angle %d",
+				"report: id[%d], x %d, y %d, w %d, p %d, major %d, minor %d, angle %d",
 				i, touch_data->coords[i].x,
 				touch_data->coords[i].y,
+				touch_data->coords[i].w,
+				touch_data->coords[i].p,
 				touch_data->coords[i].major,
 				touch_data->coords[i].minor,
 				touch_data->coords[i].angle);
@@ -1233,6 +1235,10 @@ static void goodix_ts_report_finger(
 				touch_data->coords[i].x);
 			input_report_abs(dev, ABS_MT_POSITION_Y,
 				touch_data->coords[i].y);
+			input_report_abs(dev, ABS_MT_WIDTH_MAJOR,
+				touch_data->coords[i].w);
+			input_report_abs(
+				dev, ABS_MT_PRESSURE, touch_data->coords[i].p);
 			input_report_abs(dev, ABS_MT_TOUCH_MAJOR,
 				touch_data->coords[i].major);
 			input_report_abs(dev, ABS_MT_TOUCH_MINOR,
@@ -1592,6 +1598,8 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 		input_dev, ABS_MT_POSITION_X, 0, ts_bdata->panel_max_x, 0, 0);
 	input_set_abs_params(
 		input_dev, ABS_MT_POSITION_Y, 0, ts_bdata->panel_max_y, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_WIDTH_MAJOR, 0, 255, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_PRESSURE, 0, 255, 0, 0);
 	input_set_abs_params(
 		input_dev, ABS_MT_TOUCH_MAJOR, 0, ts_bdata->panel_max_w, 0, 0);
 	input_set_abs_params(
