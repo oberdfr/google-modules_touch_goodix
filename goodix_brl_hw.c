@@ -265,9 +265,26 @@ int brl_resume(struct goodix_ts_core *cd)
 {
 	u32 cmd_reg = cd->ic_info.misc.cmd_addr;
 	u8 cmd_buf[] = { 0x00, 0x00, 0x05, 0xC4, 0x00, 0xC9, 0x00 };
+	int retry = 20;
+	u8 rcv_buf[2];
 
-	return cd->hw_ops->write(cd, cmd_reg, cmd_buf, sizeof(cmd_buf));
-	// return cd->hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+	cd->hw_ops->write(cd, cmd_reg, cmd_buf, sizeof(cmd_buf));
+
+	while (retry--) {
+		usleep_range(5000, 5100);
+		cd->hw_ops->read(cd, cmd_reg, rcv_buf, sizeof(rcv_buf));
+		if (rcv_buf[0] == 0x80 && rcv_buf[1] == 0x80)
+			break;
+	}
+	if (retry < 0) {
+		ts_err("failed to exit sleep mode, status[%X] ack[%X]",
+			rcv_buf[0], rcv_buf[1]);
+		return -EINVAL;
+	} else {
+		ts_info("Secceed to exit sleep mode with retry: %d", 19 - retry);
+	}
+
+	return 0;
 }
 
 #define GOODIX_GESTURE_CMD_BA 0x12
@@ -275,12 +292,18 @@ int brl_resume(struct goodix_ts_core *cd)
 int brl_gesture(struct goodix_ts_core *cd, int gesture_type)
 {
 	struct goodix_ts_cmd cmd;
-	u8 val = 0xff;
+	u8 val;
 
-	if (cd->gesture_type & GESTURE_SINGLE_TAP)
-		val &= ~(0x01 << 0);
-	if (cd->gesture_type & GESTURE_FOD_PRESS)
-		val &= ~(0x01 << 1);
+	if ((cd->gesture_type & GESTURE_SINGLE_TAP) &&
+		(cd->gesture_type & GESTURE_FOD_PRESS)) {
+		val = 0x0F;
+	} else if (cd->gesture_type & GESTURE_SINGLE_TAP) {
+		val = 0x2F;
+	} else if (cd->gesture_type & GESTURE_FOD_PRESS) {
+		val = 0x1F;
+	} else {
+		val = 0xFF;
+	}
 
 	if (cd->bus->ic_type == IC_TYPE_BERLIN_A)
 		cmd.cmd = GOODIX_GESTURE_CMD_BA;
@@ -323,7 +346,7 @@ static int brl_irq_enable(struct goodix_ts_core *cd, bool enable)
 		ts_debug("Irq disabled");
 		return 0;
 	}
-	ts_info("warnning: irq deepth inbalance!");
+	// ts_info("warnning: irq deepth inbalance!");
 	return 0;
 }
 
@@ -382,8 +405,6 @@ static int brl_send_cmd(struct goodix_ts_core *cd, struct goodix_ts_cmd *cmd)
 			ts_debug("cmd ack data %*ph", (int)sizeof(cmd_ack),
 				cmd_ack.buf);
 			if (cmd_ack.ack == CMD_ACK_OK) {
-				// msleep(40);		// wait for cmd response
-				usleep_range(6000, 6100);
 				return 0;
 			}
 			if (cmd_ack.ack == CMD_ACK_BUSY ||
@@ -1155,9 +1176,22 @@ static int brl_event_handler(
 	struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
 	struct goodix_ic_info_misc *misc = &cd->ic_info.misc;
 	int pre_read_len;
+	int tx = cd->ic_info.parm.drv_num;
+	int rx = cd->ic_info.parm.sen_num;
 	u8 pre_buf[38];
 	u8 event_status;
+	u32 mutual_addr;
 	int ret;
+
+	if (cd->heatmap_buffer) {
+		mutual_addr = cd->ic_info.misc.frame_data_addr +
+			      cd->ic_info.misc.frame_data_head_len +
+			      cd->ic_info.misc.fw_attr_len +
+			      cd->ic_info.misc.fw_log_len + 8;
+		brl_read(
+			cd, mutual_addr, (u8 *)cd->heatmap_buffer, tx * rx * 2);
+		goodix_rotate_abcd2cbad(tx, rx, cd->heatmap_buffer);
+	}
 
 	pre_read_len = IRQ_EVENT_HEAD_LEN + BYTES_PER_POINT * 2 +
 		       COOR_DATA_CHECKSUM_SIZE + 4;
@@ -1177,6 +1211,8 @@ static int brl_event_handler(
 			pre_buf);
 		return -EINVAL;
 	}
+
+	ts_event->event_type = EVENT_INVALID;
 
 	event_status = pre_buf[0];
 	if (event_status & GOODIX_TOUCH_EVENT)

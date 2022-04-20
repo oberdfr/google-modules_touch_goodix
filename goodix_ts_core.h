@@ -49,7 +49,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.0.5"
+#define GOODIX_DRIVER_VERSION "v1.0.6"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -523,6 +523,7 @@ struct goodix_ts_core {
 	struct regulator *avdd;
 	struct regulator *iovdd;
 	unsigned char gesture_type;
+	s16 *heatmap_buffer;
 
 	int power_on;
 	int irq;

@@ -317,8 +317,6 @@ static int gsx_gesture_ist(
 	}
 
 re_send_ges_cmd:
-	if (hw_ops->gesture(cd, 0))
-		ts_info("warning: failed re_send gesture cmd");
 	return EVT_CANCEL_IRQEVT;
 }
 
