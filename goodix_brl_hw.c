@@ -633,7 +633,7 @@ static int brl_read_version(
 	else
 		fw_addr = FW_VERSION_INFO_ADDR;
 
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < GOODIX_RETRY_3; i++) {
 		ret = hw_ops->read(cd, fw_addr, buf, sizeof(buf));
 		if (ret) {
 			ts_info("read fw version: %d, retry %d", ret, i);

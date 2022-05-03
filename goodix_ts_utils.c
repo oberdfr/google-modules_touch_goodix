@@ -69,14 +69,16 @@ int checksum_cmp(const u8 *data, int size, int mode)
 	u32 cal_checksum = 0;
 	u32 r_checksum = 0;
 	u32 i;
+	bool is_valid = !is_risk_data(data, size);
 
 	if (mode == CHECKSUM_MODE_U8_LE) {
 		if (size < 2)
 			return 1;
 		for (i = 0; i < size - 2; i++)
 			cal_checksum += data[i];
+		cal_checksum &= 0xFFFF;
 		r_checksum = data[size - 2] + (data[size - 1] << 8);
-		return (cal_checksum & 0xFFFF) == r_checksum ? 0 : 1;
+		return cal_checksum == r_checksum && is_valid ? 0 : 1;
 	}
 
 	if (size < 4)
@@ -85,7 +87,7 @@ int checksum_cmp(const u8 *data, int size, int mode)
 		cal_checksum += data[i] + (data[i + 1] << 8);
 	r_checksum = data[size - 4] + (data[size - 3] << 8) +
 		     (data[size - 2] << 16) + (data[size - 1] << 24);
-	return cal_checksum == r_checksum ? 0 : 1;
+	return cal_checksum == r_checksum && is_valid ? 0 : 1;
 }
 
 /* return 1 if all data is zero or ff
