@@ -22,7 +22,8 @@
 #define CMD_SET_DOUBLE_TAP "set_double_tap"
 #define CMD_SET_SINGLE_TAP "set_single_tap"
 #define CMD_SET_LONG_PRESS "set_long_press"
-#define CMD_SET_GESTURE_PARAM "set_gesture_param"
+#define CMD_SET_ST_PARAM "set_st_param"
+#define CMD_SET_LP_PARAM "set_lp_param"
 #define CMD_SET_CHARGE_MODE "set_charge_mode"
 #define CMD_SET_IRQ_ENABLE "set_irq_enable"
 #define CMD_SET_ESD_ENABLE "set_esd_enable"
@@ -48,13 +49,13 @@ char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_GET_PACKAGE_ID, CMD_GET_VERSION, CMD_GET_RAWDATA, CMD_GET_DIFFDATA,
 	CMD_GET_BASEDATA, CMD_GET_SELF_RAWDATA, CMD_GET_SELF_DIFFDATA,
 	CMD_GET_SELF_BASEDATA, CMD_SET_DOUBLE_TAP, CMD_SET_SINGLE_TAP,
-	CMD_SET_LONG_PRESS, CMD_SET_GESTURE_PARAM, CMD_SET_CHARGE_MODE,
-	CMD_SET_IRQ_ENABLE, CMD_SET_ESD_ENABLE, CMD_SET_DEBUG_LOG,
-	CMD_SET_SCAN_MODE, CMD_GET_SCAN_MODE, CMD_SET_CONTINUE_MODE,
-	CMD_GET_CHANNEL_NUM, CMD_GET_TX_FREQ, CMD_RESET, CMD_SET_SENSE_MODE,
-	CMD_GET_CONFIG, CMD_GET_FW_STATUS, CMD_SET_HIGHSENSE_MODE,
-	CMD_SET_GRIP_DATA, CMD_SET_PALM_MODE, CMD_SET_NOISE_MODE,
-	CMD_SET_WATER_MODE, CMD_SET_HEATMAP, NULL };
+	CMD_SET_LONG_PRESS, CMD_SET_ST_PARAM, CMD_SET_LP_PARAM,
+	CMD_SET_CHARGE_MODE, CMD_SET_IRQ_ENABLE, CMD_SET_ESD_ENABLE,
+	CMD_SET_DEBUG_LOG, CMD_SET_SCAN_MODE, CMD_GET_SCAN_MODE,
+	CMD_SET_CONTINUE_MODE, CMD_GET_CHANNEL_NUM, CMD_GET_TX_FREQ, CMD_RESET,
+	CMD_SET_SENSE_MODE, CMD_GET_CONFIG, CMD_GET_FW_STATUS,
+	CMD_SET_HIGHSENSE_MODE, CMD_SET_GRIP_DATA, CMD_SET_PALM_MODE,
+	CMD_SET_NOISE_MODE, CMD_SET_WATER_MODE, CMD_SET_HEATMAP, NULL };
 
 /* test limits keyword */
 #define CSV_TP_SPECIAL_RAW_MIN "special_raw_min"
@@ -100,9 +101,12 @@ static uint32_t index;
 #define MAX_SEN_NUM 35
 #define MAX_SHORT_NUM 15
 
+#define GESTURE_STTW 0
+#define GESTURE_LPTW 1
 typedef union __attribute__((packed)) {
 	struct {
-		u16 length;
+		u8 length;
+		u8 type;
 		u16 st_min_x;
 		u16 st_max_x;
 		u16 st_min_y;
@@ -111,6 +115,16 @@ typedef union __attribute__((packed)) {
 		u16 st_max_count;
 		u16 st_motion_tolerance;
 		u16 st_max_size;
+		u16 checksum;
+	};
+	u8 buf[20];
+} gesture_param_st_t;
+static gesture_param_st_t gesture_param_st;
+
+typedef union __attribute__((packed)) {
+	struct {
+		u8 length;
+		u8 type;
 		u16 lp_min_x;
 		u16 lp_max_x;
 		u16 lp_min_y;
@@ -130,9 +144,9 @@ typedef union __attribute__((packed)) {
 		u16 lp_motion_tolerance_outer;
 		u16 checksum;
 	};
-	u8 buf[50];
-} gesture_param_t;
-static gesture_param_t gesture_param;
+	u8 buf[34];
+} gesture_param_lp_t;
+static gesture_param_lp_t gesture_param_lp;
 
 typedef struct __attribute__((packed)) {
 	u8 result;
@@ -2144,7 +2158,6 @@ static void goodix_set_sense_mode(u8 val)
 	if (val == 1) {
 		/* normal mode */
 		index = sprintf(rbuf, "switch to coordinate mode\n");
-		cd->hw_ops->resume(cd);
 		cd->hw_ops->send_cmd(cd, &temp_cmd);
 		goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
 		cd->hw_ops->irq_enable(cd, true);
@@ -2153,7 +2166,6 @@ static void goodix_set_sense_mode(u8 val)
 		/* gesture mode */
 		index = sprintf(rbuf, "switch to gesture mode\n");
 		goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
-		cd->hw_ops->resume(cd);
 		cd->hw_ops->gesture(cd, 0);
 		cd->hw_ops->irq_enable(cd, true);
 		atomic_set(&cd->suspended, 1);
@@ -2170,32 +2182,19 @@ static void goodix_set_scan_mode(u8 val)
 {
 	struct goodix_ts_cmd temp_cmd;
 
+	temp_cmd.len = 5;
+	temp_cmd.cmd = 0x9F;
+
 	if (val == 0) {
-		temp_cmd.len = 5;
-		temp_cmd.cmd = 0x9F;
 		temp_cmd.data[0] = 0;
-		cd->hw_ops->send_cmd(cd, &temp_cmd);
-		temp_cmd.len = 6;
-		temp_cmd.cmd = 0x25;
-		temp_cmd.data[0] = 0;
-		temp_cmd.data[1] = 0;
 		ts_info("set scan mode to default");
 		index = sprintf(rbuf, "set scan mode to default\n");
 	} else if (val == 1) {
-		temp_cmd.len = 5;
-		temp_cmd.cmd = 0x9F;
-		temp_cmd.data[0] = 1;
+		temp_cmd.data[0] = 3;
 		ts_info("set scan mode to idle");
 		index = sprintf(rbuf, "set scan mode to idle\n");
 	} else {
-		temp_cmd.len = 5;
-		temp_cmd.cmd = 0x9F;
-		temp_cmd.data[0] = 0;
-		cd->hw_ops->send_cmd(cd, &temp_cmd);
-		temp_cmd.len = 6;
-		temp_cmd.cmd = 0x25;
-		temp_cmd.data[0] = 0xff;
-		temp_cmd.data[1] = 0xff;
+		temp_cmd.data[0] = 2;
 		ts_info("set scan mode to active");
 		index = sprintf(rbuf, "set scan mode to active\n");
 	}
@@ -2205,38 +2204,23 @@ static void goodix_set_scan_mode(u8 val)
 
 static void goodix_get_scan_mode(void)
 {
-	u32 cmd_addr = cd->ic_info.misc.cmd_addr;
-	u8 cmd_buf[] = { 0x00, 0x00, 0x05, 0xC5, 0x01, 0xCB, 0x00 };
-	u8 rcv_buf[2];
-	int retry = 20;
+	u8 status;
 
-	cd->hw_ops->write(cd, cmd_addr, cmd_buf, sizeof(cmd_buf));
-	while (retry--) {
-		usleep_range(2000, 2100);
-		cd->hw_ops->read(cd, cmd_addr, rcv_buf, sizeof(rcv_buf));
-		if (rcv_buf[0] == 0x80 && rcv_buf[1] == 0x80)
-			break;
-	}
-	if (retry < 0) {
-		ts_err("failed get scan mode, sta[%x] ack[%x]", rcv_buf[0],
-			rcv_buf[1]);
-		return;
-	}
-	cd->hw_ops->read(cd, 0x10184, rcv_buf, sizeof(rcv_buf));
-	ts_info("rcv_buf:%x %x", rcv_buf[0], rcv_buf[1]);
+	cd->hw_ops->read(cd, 0x10218, &status, 1);
+	ts_info("ic status:%d", status);
 
-	if (rcv_buf[1] == 1) {
+	if (status == 1) {
 		index = sprintf(rbuf, "normal active\n");
-	} else if (rcv_buf[1] == 2) {
+	} else if (status == 2) {
 		index = sprintf(rbuf, "normal idle\n");
-	} else if (rcv_buf[1] == 3) {
+	} else if (status == 3) {
 		index = sprintf(rbuf, "lowpower active\n");
-	} else if (rcv_buf[1] == 4) {
+	} else if (status == 4) {
 		index = sprintf(rbuf, "lowpower idle\n");
-	} else if (rcv_buf[1] == 5) {
+	} else if (status == 5) {
 		index = sprintf(rbuf, "sleep\n");
 	} else {
-		index = sprintf(rbuf, "invalid mode %d\n", rcv_buf[1]);
+		index = sprintf(rbuf, "invalid mode %d\n", status);
 	}
 }
 
@@ -2367,34 +2351,31 @@ static void goodix_set_custom_mode(u8 type, u8 val)
 {
 	struct goodix_ts_cmd temp_cmd;
 
-	temp_cmd.len = 6;
-	temp_cmd.cmd = 0xC7;
-	temp_cmd.data[0] = type;
-
-	if (type == PALM_FUNC)
-		index += sprintf(&rbuf[index], "palm ");
-	else if (type == NOISE_FUNC)
-		index += sprintf(&rbuf[index], "noise ");
-	else if (type == WATER_FUNC)
-		index += sprintf(&rbuf[index], "water ");
-	else {
+	if (type == PALM_FUNC) {
+		index = sprintf(&rbuf[index], "set palm %s\n",
+			val ? "disabled" : "restore");
+	} else if (type == NOISE_FUNC) {
+		if (val == 0) {
+			index = sprintf(&rbuf[index], "set noise restore\n");
+		} else if (val == 1) {
+			index = sprintf(&rbuf[index], "set noise disabled\n");
+		} else if (val == 2) {
+			index = sprintf(&rbuf[index], "set noise lv0\n");
+		} else {
+			index = sprintf(&rbuf[index], "set noise lv1\n");
+		}
+	} else if (type == WATER_FUNC) {
+		index = sprintf(&rbuf[index], "set water %s\n",
+			val ? "disabled" : "restore");
+	} else {
 		ts_err("invalid type, %d", type);
 		return;
 	}
 
-	if (val == 1) {
-		ts_info("restore");
-		index += sprintf(&rbuf[index], "restore\n");
-		temp_cmd.data[1] = 0;
-	} else if (val == 0) {
-		ts_info("disabled");
-		index += sprintf(&rbuf[index], "disabled\n");
-		temp_cmd.data[1] = 1;
-	} else {
-		ts_err("invalid val, %d", val);
-		return;
-	}
-
+	temp_cmd.len = 6;
+	temp_cmd.cmd = 0xC7;
+	temp_cmd.data[0] = type;
+	temp_cmd.data[1] = val;
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 }
 
@@ -2415,85 +2396,104 @@ static int obtain_param(char **buf)
 	return val;
 }
 
-static int goodix_parse_gesture_param(char **buf)
+static int goodix_parse_gesture_param(u8 type, char **buf)
 {
-	gesture_param.length = 50;
-	gesture_param.st_min_x = obtain_param(buf);
-	gesture_param.st_max_x = obtain_param(buf);
-	gesture_param.st_min_y = obtain_param(buf);
-	gesture_param.st_max_y = obtain_param(buf);
-	gesture_param.st_min_count = obtain_param(buf);
-	gesture_param.st_max_count = obtain_param(buf);
-	gesture_param.st_motion_tolerance = obtain_param(buf);
-	gesture_param.st_max_size = obtain_param(buf);
-	gesture_param.lp_min_x = obtain_param(buf);
-	gesture_param.lp_max_x = obtain_param(buf);
-	gesture_param.lp_min_y = obtain_param(buf);
-	gesture_param.lp_max_y = obtain_param(buf);
-	gesture_param.lp_min_count = obtain_param(buf);
-	gesture_param.lp_max_size = obtain_param(buf);
-	gesture_param.lp_marginal_min_x = obtain_param(buf);
-	gesture_param.lp_marginal_max_x = obtain_param(buf);
-	gesture_param.lp_marginal_min_y = obtain_param(buf);
-	gesture_param.lp_marginal_max_y = obtain_param(buf);
-	gesture_param.lp_monitor_chan_min_tx = obtain_param(buf);
-	gesture_param.lp_monitor_chan_max_tx = obtain_param(buf);
-	gesture_param.lp_monitor_chan_min_rx = obtain_param(buf);
-	gesture_param.lp_monitor_chan_max_rx = obtain_param(buf);
-	gesture_param.lp_min_node_count = obtain_param(buf);
-	gesture_param.lp_motion_tolerance_inner = obtain_param(buf);
-	gesture_param.lp_motion_tolerance_outer = obtain_param(buf);
-	goodix_append_checksum(gesture_param.buf, 48, CHECKSUM_MODE_U8_LE);
-
-	ts_info("st_min_x:                  %d", gesture_param.st_min_x);
-	ts_info("st_max_x:                  %d", gesture_param.st_max_x);
-	ts_info("st_min_y:                  %d", gesture_param.st_min_y);
-	ts_info("st_max_y:                  %d", gesture_param.st_max_y);
-	ts_info("st_min_count:              %d", gesture_param.st_min_count);
-	ts_info("st_max_count:              %d", gesture_param.st_max_count);
-	ts_info("st_motion_tolerance:       %d",
-		gesture_param.st_motion_tolerance);
-	ts_info("st_max_size:               %d", gesture_param.st_max_size);
-	ts_info("lp_min_x:                  %d", gesture_param.lp_min_x);
-	ts_info("lp_max_x:                  %d", gesture_param.lp_max_x);
-	ts_info("lp_min_y:                  %d", gesture_param.lp_min_y);
-	ts_info("lp_max_y:                  %d", gesture_param.lp_max_y);
-	ts_info("lp_min_count:              %d", gesture_param.lp_min_count);
-	ts_info("lp_max_size:               %d", gesture_param.lp_max_size);
-	ts_info("lp_marginal_min_x:         %d",
-		gesture_param.lp_marginal_min_x);
-	ts_info("lp_marginal_max_x:         %d",
-		gesture_param.lp_marginal_max_x);
-	ts_info("lp_marginal_min_y:         %d",
-		gesture_param.lp_marginal_min_y);
-	ts_info("lp_marginal_max_y:         %d",
-		gesture_param.lp_marginal_max_y);
-	ts_info("lp_monitor_chan_min_tx:    %d",
-		gesture_param.lp_monitor_chan_min_tx);
-	ts_info("lp_monitor_chan_max_tx:    %d",
-		gesture_param.lp_monitor_chan_max_tx);
-	ts_info("lp_monitor_chan_min_rx:    %d",
-		gesture_param.lp_monitor_chan_min_rx);
-	ts_info("lp_monitor_chan_max_rx:    %d",
-		gesture_param.lp_monitor_chan_max_rx);
-	ts_info("lp_min_node_count:         %d",
-		gesture_param.lp_min_node_count);
-	ts_info("lp_motion_tolerance_inner: %d",
-		gesture_param.lp_motion_tolerance_inner);
-	ts_info("lp_motion_tolerance_outer: %d",
-		gesture_param.lp_motion_tolerance_outer);
+	if (type == GESTURE_STTW) {
+		gesture_param_st.length = sizeof(gesture_param_st);
+		gesture_param_st.type = type;
+		gesture_param_st.st_min_x = obtain_param(buf);
+		gesture_param_st.st_max_x = obtain_param(buf);
+		gesture_param_st.st_min_y = obtain_param(buf);
+		gesture_param_st.st_max_y = obtain_param(buf);
+		gesture_param_st.st_min_count = obtain_param(buf);
+		gesture_param_st.st_max_count = obtain_param(buf);
+		gesture_param_st.st_motion_tolerance = obtain_param(buf);
+		gesture_param_st.st_max_size = obtain_param(buf);
+		goodix_append_checksum(gesture_param_st.buf,
+			sizeof(gesture_param_st) - 2, CHECKSUM_MODE_U8_LE);
+		ts_info("st_min_x:                  %d",
+			gesture_param_st.st_min_x);
+		ts_info("st_max_x:                  %d",
+			gesture_param_st.st_max_x);
+		ts_info("st_min_y:                  %d",
+			gesture_param_st.st_min_y);
+		ts_info("st_max_y:                  %d",
+			gesture_param_st.st_max_y);
+		ts_info("st_min_count:              %d",
+			gesture_param_st.st_min_count);
+		ts_info("st_max_count:              %d",
+			gesture_param_st.st_max_count);
+		ts_info("st_motion_tolerance:       %d",
+			gesture_param_st.st_motion_tolerance);
+		ts_info("st_max_size:               %d",
+			gesture_param_st.st_max_size);
+	} else {
+		gesture_param_lp.length = sizeof(gesture_param_lp);
+		gesture_param_lp.type = type;
+		gesture_param_lp.lp_min_x = obtain_param(buf);
+		gesture_param_lp.lp_max_x = obtain_param(buf);
+		gesture_param_lp.lp_min_y = obtain_param(buf);
+		gesture_param_lp.lp_max_y = obtain_param(buf);
+		gesture_param_lp.lp_min_count = obtain_param(buf);
+		gesture_param_lp.lp_max_size = obtain_param(buf);
+		gesture_param_lp.lp_marginal_min_x = obtain_param(buf);
+		gesture_param_lp.lp_marginal_max_x = obtain_param(buf);
+		gesture_param_lp.lp_marginal_min_y = obtain_param(buf);
+		gesture_param_lp.lp_marginal_max_y = obtain_param(buf);
+		gesture_param_lp.lp_monitor_chan_min_tx = obtain_param(buf);
+		gesture_param_lp.lp_monitor_chan_max_tx = obtain_param(buf);
+		gesture_param_lp.lp_monitor_chan_min_rx = obtain_param(buf);
+		gesture_param_lp.lp_monitor_chan_max_rx = obtain_param(buf);
+		gesture_param_lp.lp_min_node_count = obtain_param(buf);
+		gesture_param_lp.lp_motion_tolerance_inner = obtain_param(buf);
+		gesture_param_lp.lp_motion_tolerance_outer = obtain_param(buf);
+		goodix_append_checksum(gesture_param_lp.buf,
+			sizeof(gesture_param_lp) - 2, CHECKSUM_MODE_U8_LE);
+		ts_info("lp_min_x:                  %d",
+			gesture_param_lp.lp_min_x);
+		ts_info("lp_max_x:                  %d",
+			gesture_param_lp.lp_max_x);
+		ts_info("lp_min_y:                  %d",
+			gesture_param_lp.lp_min_y);
+		ts_info("lp_max_y:                  %d",
+			gesture_param_lp.lp_max_y);
+		ts_info("lp_min_count:              %d",
+			gesture_param_lp.lp_min_count);
+		ts_info("lp_max_size:               %d",
+			gesture_param_lp.lp_max_size);
+		ts_info("lp_marginal_min_x:         %d",
+			gesture_param_lp.lp_marginal_min_x);
+		ts_info("lp_marginal_max_x:         %d",
+			gesture_param_lp.lp_marginal_max_x);
+		ts_info("lp_marginal_min_y:         %d",
+			gesture_param_lp.lp_marginal_min_y);
+		ts_info("lp_marginal_max_y:         %d",
+			gesture_param_lp.lp_marginal_max_y);
+		ts_info("lp_monitor_chan_min_tx:    %d",
+			gesture_param_lp.lp_monitor_chan_min_tx);
+		ts_info("lp_monitor_chan_max_tx:    %d",
+			gesture_param_lp.lp_monitor_chan_max_tx);
+		ts_info("lp_monitor_chan_min_rx:    %d",
+			gesture_param_lp.lp_monitor_chan_min_rx);
+		ts_info("lp_monitor_chan_max_rx:    %d",
+			gesture_param_lp.lp_monitor_chan_max_rx);
+		ts_info("lp_min_node_count:         %d",
+			gesture_param_lp.lp_min_node_count);
+		ts_info("lp_motion_tolerance_inner: %d",
+			gesture_param_lp.lp_motion_tolerance_inner);
+		ts_info("lp_motion_tolerance_outer: %d",
+			gesture_param_lp.lp_motion_tolerance_outer);
+	}
 
 	return 0;
 }
 
-static void goodix_set_gesture_param(void)
+static void goodix_set_gesture_param(u8 type)
 {
 	struct goodix_ts_cmd temp_cmd;
 	u32 cmd_reg = cd->ic_info.misc.cmd_addr;
 	int retry;
 	u8 status;
-
-	ts_info("param:%*ph", 50, gesture_param.buf);
 
 	temp_cmd.len = 4;
 	temp_cmd.cmd = 0xC8;
@@ -2510,8 +2510,17 @@ static void goodix_set_gesture_param(void)
 			status);
 		goto exit;
 	}
-	cd->hw_ops->write(
-		cd, 0x13D80, gesture_param.buf, sizeof(gesture_param));
+	if (type == GESTURE_STTW) {
+		ts_info("STTW param:%*ph", gesture_param_st.length,
+			gesture_param_st.buf);
+		cd->hw_ops->write(cd, 0x13D80, gesture_param_st.buf,
+			sizeof(gesture_param_st));
+	} else {
+		ts_info("LPTW param:%*ph", gesture_param_lp.length,
+			gesture_param_lp.buf);
+		cd->hw_ops->write(cd, 0x13D80, gesture_param_lp.buf,
+			sizeof(gesture_param_lp));
+	}
 
 	temp_cmd.len = 4;
 	temp_cmd.cmd = 0x05;
@@ -3167,16 +3176,29 @@ static ssize_t driver_test_write(
 		goto exit;
 	}
 
-	if (!strncmp(p, CMD_SET_GESTURE_PARAM, strlen(CMD_SET_GESTURE_PARAM))) {
+	if (!strncmp(p, CMD_SET_ST_PARAM, strlen(CMD_SET_ST_PARAM))) {
 		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
 		token = strsep(&p, ",");
 		if (!token || !p) {
 			index = sprintf(rbuf, "%s: invalid cmd param\n",
-				CMD_SET_GESTURE_PARAM);
+				CMD_SET_ST_PARAM);
 			goto exit;
 		}
-		goodix_parse_gesture_param(&p);
-		goodix_set_gesture_param();
+		goodix_parse_gesture_param(GESTURE_STTW, &p);
+		goodix_set_gesture_param(GESTURE_STTW);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_SET_LP_PARAM, strlen(CMD_SET_LP_PARAM))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_LP_PARAM);
+			goto exit;
+		}
+		goodix_parse_gesture_param(GESTURE_LPTW, &p);
+		goodix_set_gesture_param(GESTURE_LPTW);
 		goto exit;
 	}
 

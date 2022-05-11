@@ -1600,10 +1600,8 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 		input_dev, ABS_MT_POSITION_Y, 0, ts_bdata->panel_max_y, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_WIDTH_MAJOR, 0, 255, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_PRESSURE, 0, 255, 0, 0);
-	input_set_abs_params(
-		input_dev, ABS_MT_TOUCH_MAJOR, 0, ts_bdata->panel_max_w, 0, 0);
-	input_set_abs_params(
-		input_dev, ABS_MT_TOUCH_MINOR, 0, ts_bdata->panel_max_w, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR, 0, 4096, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_TOUCH_MINOR, 0, 4096, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_ORIENTATION, -90, 90, 0, 0);
 #ifdef INPUT_TYPE_B_PROTOCOL
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 7, 0)

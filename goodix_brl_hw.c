@@ -985,7 +985,7 @@ static int brl_esd_check(struct goodix_ts_core *cd)
 }
 
 #define IRQ_EVENT_HEAD_LEN 8
-#define BYTES_PER_POINT 12
+#define BYTES_PER_POINT 14
 #define COOR_DATA_CHECKSUM_SIZE 2
 
 #define GOODIX_TOUCH_EVENT 0x80
@@ -1019,12 +1019,14 @@ static void goodix_parse_finger(
 		touch_data->coords[id].y = y;
 		touch_data->coords[id].w = w;
 
-		if (point_struct_len == 12) {
+		if (point_struct_len > 8) {
 			touch_data->coords[id].p = coor_data[8];
-			touch_data->coords[id].major = coor_data[9];
-			touch_data->coords[id].minor = coor_data[10];
+			touch_data->coords[id].major =
+				le16_to_cpup((__le16 *)(coor_data + 9));
+			touch_data->coords[id].minor =
+				le16_to_cpup((__le16 *)(coor_data + 11));
 			touch_data->coords[id].angle =
-				(signed char)coor_data[11];
+				(signed char)coor_data[13];
 		}
 
 		coor_data += point_struct_len;
@@ -1178,7 +1180,7 @@ static int brl_event_handler(
 	int pre_read_len;
 	int tx = cd->ic_info.parm.drv_num;
 	int rx = cd->ic_info.parm.sen_num;
-	u8 pre_buf[38];
+	u8 pre_buf[100];
 	u8 event_status;
 	u32 mutual_addr;
 	int ret;
