@@ -1403,6 +1403,8 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	struct goodix_ts_esd *ts_esd = &core_data->ts_esd;
 	int ret;
 
+	cpu_latency_qos_update_request(&core_data->pm_qos_req, 100 /* usec */);
+
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
 	tpm_lock_wakelock(&core_data->tpm,
 		TPM_WAKELOCK_TYPE_IRQ | TPM_WAKELOCK_TYPE_NON_WAKE_UP);
@@ -1457,6 +1459,8 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
 	tpm_unlock_wakelock(&core_data->tpm, TPM_WAKELOCK_TYPE_IRQ);
 #endif
+
+	cpu_latency_qos_update_request(&core_data->pm_qos_req, PM_QOS_DEFAULT_VALUE);
 	return IRQ_HANDLED;
 }
 
@@ -2255,6 +2259,8 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 		}
 	}
 
+	cpu_latency_qos_add_request(&cd->pm_qos_req, PM_QOS_DEFAULT_VALUE);
+
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
 	cd->tpm.pdev = cd->pdev;
 #ifdef CONFIG_OF
@@ -2386,6 +2392,7 @@ err_init_sysfs:
 	tpm_unregister_notification(&cd->tpm);
 err_init_tpm:
 #endif
+	cpu_latency_qos_remove_request(&cd->pm_qos_req);
 	goodix_ts_pen_dev_remove(cd);
 err_finger:
 	goodix_ts_input_dev_remove(cd);
@@ -2674,6 +2681,7 @@ static int goodix_ts_remove(struct platform_device *pdev)
 #if IS_ENABLED(CONFIG_FB)
 		fb_unregister_client(&core_data->fb_notifier);
 #endif
+		cpu_latency_qos_remove_request(&core_data->pm_qos_req);
 		core_module_prob_sate = CORE_MODULE_REMOVED;
 		goodix_ts_esd_uninit(core_data);
 
