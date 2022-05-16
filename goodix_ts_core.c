@@ -876,6 +876,15 @@ static int get_self_sensor_data(
 	cmd->size = (tx + rx) * sizeof(uint16_t);
 	return 0;
 }
+
+static int set_continuous_report(
+	void *private_data, struct gti_continuous_report_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return cd->hw_ops->set_continuously_report_enabled(cd,
+		cmd->setting == GTI_CONTINUOUS_REPORT_ENABLE);
+}
+
 #endif
 
 /* prosfs create */
@@ -2290,7 +2299,9 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	cd->apis_data.set_sensing_enabled = set_sensing_enabled;
 	cd->apis_data.get_wake_lock_state = get_wake_lock_state;
 	cd->apis_data.set_wake_lock_state = set_wake_lock_state;
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
 	cd->apis_data.tmf = &cd->tmf;
+#endif
 
 	ret = touch_apis_init(&cd->pdev->dev, &cd->apis_data);
 	if (ret < 0) {
@@ -2303,6 +2314,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 		sizeof(struct gti_optional_configuration), GFP_KERNEL);
 	options->get_mutual_sensor_data = get_mutual_sensor_data;
 	options->get_self_sensor_data = get_self_sensor_data;
+	options->set_continuous_report = set_continuous_report;
 
 	cd->gti = goog_touch_interface_probe(
 		cd, cd->bus->dev, cd->input_dev, gti_default_handler, options);
