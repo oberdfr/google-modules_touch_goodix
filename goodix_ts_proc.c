@@ -1702,7 +1702,7 @@ static int goodix_open_test(void)
 		}
 
 		cd->hw_ops->read(cd, raw_addr, tmp_buf, tx * rx * 2);
-		goodix_rotate_abcd2cbad(tx, rx, (s16 *)tmp_buf);
+		goodix_rotate_abcd2cbad(tx, rx, (s16 *)tmp_buf, NULL);
 		memcpy((u8 *)ts_test->rawdata[i].data, tmp_buf, tx * rx * 2);
 	}
 
@@ -1861,7 +1861,7 @@ static int goodix_noise_test(void)
 		}
 
 		cd->hw_ops->read(cd, raw_addr, tmp_buf, tx * rx * 2);
-		goodix_rotate_abcd2cbad(tx, rx, (s16 *)tmp_buf);
+		goodix_rotate_abcd2cbad(tx, rx, (s16 *)tmp_buf, NULL);
 		memcpy((u8 *)ts_test->noisedata[i].data, tmp_buf, tx * rx * 2);
 	}
 
@@ -1977,7 +1977,7 @@ static void goodix_auto_noise_test(u16 cnt, int threshold)
 	}
 
 	cd->hw_ops->read(cd, raw_addr, (u8 *)tmp_buf, tx * rx * 2);
-	goodix_rotate_abcd2cbad(tx, rx, tmp_buf);
+	goodix_rotate_abcd2cbad(tx, rx, tmp_buf, NULL);
 	index += sprintf(&rbuf[index], "max:\n");
 	for (i = 0; i < tx * rx; i++) {
 		tmp_val = tmp_buf[i];
@@ -2002,7 +2002,7 @@ static void goodix_auto_noise_test(u16 cnt, int threshold)
 		goto exit;
 	}
 	cd->hw_ops->read(cd, raw_addr, (u8 *)tmp_buf, tx * rx * 2);
-	goodix_rotate_abcd2cbad(tx, rx, tmp_buf);
+	goodix_rotate_abcd2cbad(tx, rx, tmp_buf, NULL);
 	index += sprintf(&rbuf[index], "min:\n");
 	for (i = 0; i < tx * rx; i++) {
 		tmp_val = tmp_buf[i];
@@ -2114,7 +2114,7 @@ static int get_cap_data(uint8_t *type)
 			ts_err("read frame data failed");
 			goto exit;
 		}
-		goodix_rotate_abcd2cbad(tx, rx, (s16 *)frame_buf);
+		goodix_rotate_abcd2cbad(tx, rx, (s16 *)frame_buf, NULL);
 		for (i = 0; i < tx * rx; i++) {
 			index += sprintf(
 				&rbuf[index], "%5d,", *((s16 *)frame_buf + i));
@@ -2558,14 +2558,11 @@ static void goodix_set_heatmap(int val)
 	cd->hw_ops->irq_enable(cd, false);
 	if (val == 0) {
 		index = sprintf(rbuf, "disable heatmap\n");
-		kfree(cd->heatmap_buffer);
-		cd->heatmap_buffer = NULL;
 		temp_cmd.len = 5;
 		temp_cmd.cmd = 0x90;
 		temp_cmd.data[0] = 0;
 	} else {
 		index = sprintf(rbuf, "enable heatmap\n");
-		cd->heatmap_buffer = kcalloc(1000, sizeof(s16), GFP_KERNEL);
 		temp_cmd.len = 5;
 		temp_cmd.cmd = 0x90;
 		temp_cmd.data[0] = 2;

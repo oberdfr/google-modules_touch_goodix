@@ -428,6 +428,77 @@ struct goodix_ts_event {
 	struct goodix_pen_data pen_data;
 };
 
+struct goodix_ts_event_data {
+	u8 fp_flag : 4;
+	u8 type : 4;
+	u8 int_count;
+};
+
+struct goodix_ts_request_event_data {
+	u8 fp_flag : 4;
+	u8 type : 4;
+	u8 int_count;
+	u8 request_type;
+	u8 reserved1;
+	u8 reserved2;
+	u8 reserved3;
+	u16 checksum;
+};
+
+struct goodix_ts_touch_event_data {
+	u8 fp_flag : 4;
+	u8 type : 4;
+	u8 int_count;
+	u8 touches : 4;
+	u8 large_touch : 1;
+	u8 hover_approach_flag : 1;
+	u8 edge_flag : 1;
+	u8 reset_int : 1;
+	u8 custom_coor_info_flag : 1;
+	u8 reserved1 : 7;
+	u16 reserved2;
+	u16 checksum;
+	u8 data[0];
+};
+
+struct goodix_ts_gesture_event_data {
+	u8 fp_flag : 4;
+	u8 type : 4;
+	u8 int_count;
+	u8 reserved1 : 4;
+	u8 large_touch : 1;
+	u8 hover_approach_flag : 1;
+	u8 edge_flag : 1;
+	u8 reset_int : 1;
+	u8 touches;
+	u8 gesture_type;
+	u8 reserved3;
+	u16 checksum;
+	u8 data[0];
+};
+
+struct goodix_mutual_data {
+	uint16_t duration;
+	uint16_t tx1_freq;
+	uint16_t tx2_freq;
+	uint16_t res;
+	uint16_t data[0];
+};
+
+struct goodix_self_sensing_data {
+	uint16_t tx_duration;
+	uint16_t rx_duration;
+	uint16_t tx_freq;
+	uint16_t rx_freq;
+	uint16_t res;
+	uint16_t data[0];
+};
+
+struct goodix_rx_package {
+	uint8_t header[8];
+	uint16_t data[0];
+};
+
 enum goodix_ic_bus_type {
 	GOODIX_BUS_TYPE_I2C,
 	GOODIX_BUS_TYPE_SPI,
@@ -443,6 +514,8 @@ struct goodix_bus_interface {
 	u8 *tx_buf;
 	int (*read)(struct device *dev, unsigned int addr, unsigned char *data,
 		unsigned int len);
+	int (*read_fast)(struct device *dev, unsigned int addr,
+		struct goodix_rx_package *package, unsigned int len);
 	int (*write)(struct device *dev, unsigned int addr, unsigned char *data,
 		unsigned int len);
 };
@@ -456,6 +529,8 @@ struct goodix_ts_hw_ops {
 	int (*irq_enable)(struct goodix_ts_core *cd, bool enable);
 	int (*read)(struct goodix_ts_core *cd, unsigned int addr,
 		unsigned char *data, unsigned int len);
+	int (*read_fast)(struct goodix_ts_core *cd, unsigned int addr,
+		struct goodix_rx_package *package, unsigned int len);
 	int (*write)(struct goodix_ts_core *cd, unsigned int addr,
 		unsigned char *data, unsigned int len);
 	int (*send_cmd)(struct goodix_ts_core *cd, struct goodix_ts_cmd *cmd);
@@ -476,6 +551,7 @@ struct goodix_ts_hw_ops {
 	int (*set_scan_mode)(struct goodix_ts_core *cd, int mdoe);
 	int (*set_continuously_report_enabled)(
 		struct goodix_ts_core *cd, bool enabled);
+	int (*set_heatmap_enabled)(struct goodix_ts_core *cd, bool enabled);
 };
 
 /*
@@ -523,7 +599,10 @@ struct goodix_ts_core {
 	struct regulator *avdd;
 	struct regulator *iovdd;
 	unsigned char gesture_type;
-	s16 *heatmap_buffer;
+	struct goodix_rx_package *touch_frame_package;
+	size_t touch_frame_size;
+	uint16_t *mutual_data;
+	uint16_t *self_sensing_data;
 
 	int power_on;
 	int irq;
@@ -701,7 +780,7 @@ u32 goodix_append_checksum(u8 *data, int len, int mode);
 int checksum_cmp(const u8 *data, int size, int mode);
 int is_risk_data(const u8 *data, int size);
 u32 goodix_get_file_config_id(u8 *ic_config);
-void goodix_rotate_abcd2cbad(int tx, int rx, s16 *data);
+void goodix_rotate_abcd2cbad(int tx, int rx, s16 *src, s16 *dest);
 
 int goodix_fw_update_init(struct goodix_ts_core *core_data);
 void goodix_fw_update_uninit(void);

@@ -1350,6 +1350,9 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		}
 		if (ts_event->event_type == EVENT_REQUEST)
 			goodix_ts_request_handle(core_data, ts_event);
+
+		/* read done */
+		hw_ops->after_event_handler(core_data);
 	}
 
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
@@ -1868,6 +1871,7 @@ static int goodix_ts_suspend(struct goodix_ts_core *core_data)
 	atomic_set(&core_data->suspended, 1);
 	/* disable irq */
 	hw_ops->irq_enable(core_data, false);
+	hw_ops->set_heatmap_enabled(core_data, false);
 
 	/*
 	 * notify suspend event, inform the esd protector
@@ -1997,6 +2001,8 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
 	}
 	mutex_unlock(&goodix_modules.mutex);
 
+	hw_ops->set_heatmap_enabled(core_data, true);
+
 out:
 	/* enable irq */
 	hw_ops->irq_enable(core_data, true);
@@ -2092,6 +2098,17 @@ static int goodix_generic_noti_callback(
 int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 {
 	int ret;
+	int tx = cd->ic_info.parm.drv_num;
+	int rx = cd->ic_info.parm.sen_num;
+	size_t mutual_size = tx * rx * sizeof(s16);
+	size_t self_sensing_size = (tx + rx) * sizeof(s16);
+	struct goodix_ic_info_misc *misc = &cd->ic_info.misc;
+	size_t touch_frame_size =
+		misc->frame_data_addr - misc->touch_data_addr +
+		misc->frame_data_head_len + misc->fw_attr_len +
+		misc->fw_log_len + sizeof(struct goodix_mutual_data) +
+		mutual_size + sizeof(struct goodix_self_sensing_data) +
+		self_sensing_size;
 
 	/* alloc/config/register input device */
 	ret = goodix_ts_input_dev_config(cd);
@@ -2187,6 +2204,14 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 		ts_err("failed set init inspect");
 		goto err_init_inspect;
 	}
+
+	cd->touch_frame_size = touch_frame_size;
+	cd->touch_frame_package =
+		devm_kzalloc(&cd->pdev->dev, touch_frame_size + 8, GFP_KERNEL);
+	cd->mutual_data = devm_kzalloc(&cd->pdev->dev, mutual_size, GFP_KERNEL);
+	cd->self_sensing_data =
+		devm_kzalloc(&cd->pdev->dev, self_sensing_size, GFP_KERNEL);
+	cd->hw_ops->set_heatmap_enabled(cd, true);
 
 	/* request irq line */
 	ret = goodix_ts_irq_setup(cd);

@@ -124,30 +124,34 @@ u32 goodix_get_file_config_id(u8 *ic_config)
 }
 
 /* matrix transpose */
-void goodix_rotate_abcd2cbad(int tx, int rx, s16 *data)
+void goodix_rotate_abcd2cbad(int tx, int rx, s16 *src, s16 *dest)
 {
-	s16 *temp_buf = NULL;
+	s16 *temp_buf = dest;
 	int size = tx * rx;
-	int i;
-	int j;
-	int col;
+	int x;
+	s16 *curr;
+	int index_org = 0;
 
-	temp_buf = kcalloc(size, sizeof(s16), GFP_KERNEL);
-	if (!temp_buf) {
-		ts_err("malloc failed");
-		return;
-	}
-
-	for (i = 0, j = 0, col = 0; i < size; i++) {
-		temp_buf[i] = data[j++ * rx + col];
-		if (j == tx) {
-			j = 0;
-			col++;
+	if (dest == NULL) {
+		temp_buf = kcalloc(size, sizeof(s16), GFP_KERNEL);
+		if (!temp_buf) {
+			ts_err("malloc failed");
+			return;
 		}
 	}
 
-	memcpy(data, temp_buf, size * sizeof(s16));
-	kfree(temp_buf);
+	curr = temp_buf;
+	for (x = 0; x < rx; x++) {
+		for (index_org = x; index_org < size; index_org += rx) {
+			*curr = src[index_org];
+			curr++;
+		}
+	}
+
+	if (dest == NULL) {
+		memcpy(src, temp_buf, size * sizeof(s16));
+		kfree(temp_buf);
+	}
 }
 
 /* get ic type */

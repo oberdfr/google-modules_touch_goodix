@@ -172,9 +172,65 @@ static int goodix_spi_read(struct device *dev, unsigned int addr,
 	memcpy(data, &rx_buf[SPI_READ_PREFIX_LEN - 1], len);
 
 err_spi_transfer:
+	if (tx_buf != goodix_spi_bus.tx_buf)
+		kfree(tx_buf);
+err_alloc_rx_buf:
 	if (rx_buf != goodix_spi_bus.rx_buf)
 		kfree(rx_buf);
-err_alloc_rx_buf:
+	return ret;
+}
+
+static int goodix_spi_read_fast(struct device *dev, unsigned int addr,
+	struct goodix_rx_package *package, unsigned int len)
+{
+	struct spi_device *spi = to_spi_device(dev);
+	u8 *tx_buf = NULL;
+	struct spi_transfer xfers;
+	struct spi_message spi_msg;
+	int ret = 0;
+	int buf_len = SPI_READ_PREFIX_LEN - 1 + len;
+
+	if (buf_len >= 64) {
+		buf_len = ALIGN(buf_len, 4);
+	}
+
+	if (buf_len <= SPI_PREALLOC_TX_BUF_SIZE) {
+		tx_buf = goodix_spi_bus.tx_buf;
+	} else {
+		tx_buf = kzalloc(buf_len, GFP_KERNEL);
+		if (!tx_buf) {
+			ts_err("alloc tx_buf failed, size:%d", buf_len);
+			return -ENOMEM;
+		}
+	}
+
+	spi_message_init(&spi_msg);
+	memset(&xfers, 0, sizeof(xfers));
+
+	/*spi_read tx_buf format: 0xF1 + addr(4bytes) + data*/
+	tx_buf[0] = SPI_READ_FLAG;
+	tx_buf[1] = (addr >> 24) & 0xFF;
+	tx_buf[2] = (addr >> 16) & 0xFF;
+	tx_buf[3] = (addr >> 8) & 0xFF;
+	tx_buf[4] = addr & 0xFF;
+	tx_buf[5] = 0xFF;
+	tx_buf[6] = 0xFF;
+	tx_buf[7] = 0xFF;
+
+	xfers.tx_buf = tx_buf;
+	xfers.rx_buf = package->header;
+	xfers.len = buf_len;
+	xfers.cs_change = 0;
+	xfers.bits_per_word = buf_len >= 64 ? 32 : 8;
+	spi_message_add_tail(&xfers, &spi_msg);
+
+	ret = spi_sync(spi, &spi_msg);
+	if (ret < 0) {
+		ts_err("spi transfer error:%d", ret);
+		goto err_spi_transfer;
+	}
+
+err_spi_transfer:
 	if (tx_buf != goodix_spi_bus.tx_buf)
 		kfree(tx_buf);
 	return ret;
@@ -250,6 +306,7 @@ static int goodix_spi_probe(struct spi_device *spi)
 	/* init spi_device */
 	spi->mode = SPI_MODE_0;
 	spi->bits_per_word = 8;
+	spi->rt = true;
 
 	ret = spi_setup(spi);
 	if (ret) {
@@ -264,10 +321,12 @@ static int goodix_spi_probe(struct spi_device *spi)
 
 	goodix_spi_bus.bus_type = GOODIX_BUS_TYPE_SPI;
 	goodix_spi_bus.dev = &spi->dev;
-	if (goodix_spi_bus.ic_type == IC_TYPE_BERLIN_A)
+	if (goodix_spi_bus.ic_type == IC_TYPE_BERLIN_A) {
 		goodix_spi_bus.read = goodix_spi_read_bra;
-	else
+	} else {
 		goodix_spi_bus.read = goodix_spi_read;
+		goodix_spi_bus.read_fast = goodix_spi_read_fast;
+	}
 	goodix_spi_bus.write = goodix_spi_write;
 
 	goodix_spi_bus.rx_buf = kzalloc(SPI_PREALLOC_RX_BUF_SIZE, GFP_KERNEL);
