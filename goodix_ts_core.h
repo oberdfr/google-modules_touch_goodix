@@ -46,6 +46,9 @@
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
 #include "touch_mf_mode.h"
 #endif
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+#include <goog_touch_interface.h>
+#endif
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
@@ -624,6 +627,9 @@ struct goodix_ts_core {
 #endif
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
 	struct touch_mf tmf;
+#endif
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+	struct goog_touch_interface *gti;
 #endif
 
 	/* Time that the event was first received from the touch IC,

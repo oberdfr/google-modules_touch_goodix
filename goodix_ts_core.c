@@ -846,6 +846,38 @@ int set_wake_lock_state(
 	return ret;
 }
 
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+static int gti_default_handler(void *private_data, enum gti_cmd_type cmd_type,
+	struct gti_union_cmd_data *cmd)
+{
+	return -ESRCH;
+}
+
+static int get_mutual_sensor_data(
+	void *private_data, struct gti_sensor_data_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	int tx = cd->ic_info.parm.drv_num;
+	int rx = cd->ic_info.parm.sen_num;
+
+	cmd->buffer = (u8 *)cd->mutual_data;
+	cmd->size = tx * rx * sizeof(uint16_t);
+	return 0;
+}
+
+static int get_self_sensor_data(
+	void *private_data, struct gti_sensor_data_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	int tx = cd->ic_info.parm.drv_num;
+	int rx = cd->ic_info.parm.sen_num;
+
+	cmd->buffer = (u8 *)cd->self_sensing_data;
+	cmd->size = (tx + rx) * sizeof(uint16_t);
+	return 0;
+}
+#endif
+
 /* prosfs create */
 static int rawdata_proc_show(struct seq_file *m, void *v)
 {
@@ -1209,6 +1241,7 @@ static void goodix_ts_report_pen(
 	mutex_unlock(&dev->mutex);
 }
 
+#if !IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 static void goodix_ts_report_finger(
 	struct goodix_ts_core *cd, struct goodix_touch_data *touch_data)
 {
@@ -1261,6 +1294,58 @@ static void goodix_ts_report_finger(
 
 	mutex_unlock(&dev->mutex);
 }
+#endif
+
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+static void goodix_ts_report_finger_goog(
+	struct goodix_ts_core *cd, struct goodix_touch_data *touch_data)
+{
+	struct input_dev *dev = cd->input_dev;
+	struct goog_touch_interface *gti = cd->gti;
+	unsigned int touch_num = touch_data->touch_num;
+	int i;
+
+	goog_input_lock(gti);
+
+	goog_input_set_timestamp(gti, dev, cd->coords_timestamp);
+	for (i = 0; i < GOODIX_MAX_TOUCH; i++) {
+		struct goodix_ts_coords *coord = &touch_data->coords[i];
+		if (coord->status == TS_TOUCH) {
+			goog_input_mt_slot(gti, dev, i);
+			goog_input_mt_report_slot_state(
+				gti, dev, MT_TOOL_FINGER, true);
+			goog_input_report_abs(
+				gti, dev, ABS_MT_POSITION_X, coord->x);
+			goog_input_report_abs(
+				gti, dev, ABS_MT_POSITION_Y, coord->y);
+			goog_input_report_abs(
+				gti, dev, ABS_MT_WIDTH_MAJOR, coord->w);
+			goog_input_report_abs(
+				gti, dev, ABS_MT_PRESSURE, coord->p);
+			goog_input_report_abs(
+				gti, dev, ABS_MT_TOUCH_MAJOR, coord->major);
+			goog_input_report_abs(
+				gti, dev, ABS_MT_TOUCH_MINOR, coord->minor);
+			goog_input_report_abs(
+				gti, dev, ABS_MT_ORIENTATION, coord->angle);
+		} else {
+			goog_input_mt_slot(gti, dev, i);
+			goog_input_mt_report_slot_state(
+				gti, dev, MT_TOOL_FINGER, false);
+		}
+	}
+
+	goog_input_report_key(gti, dev, BTN_TOUCH, touch_num > 0 ? 1 : 0);
+	goog_input_sync(gti, dev);
+	goog_input_process(gti);
+
+	goog_input_unlock(gti);
+
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
+	touch_mf_update_state(&cd->tmf, touch_num);
+#endif
+}
+#endif
 
 static int goodix_ts_request_handle(
 	struct goodix_ts_core *cd, struct goodix_ts_event *ts_event)
@@ -1340,8 +1425,13 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		if (ts_event->event_type == EVENT_TOUCH) {
 			/* report touch */
 			core_data->coords_timestamp = core_data->isr_timestamp;
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+			goodix_ts_report_finger_goog(
+				core_data, &ts_event->touch_data);
+#else
 			goodix_ts_report_finger(
 				core_data, &ts_event->touch_data);
+#endif
 		}
 		if (core_data->board_data.pen_enable &&
 			ts_event->event_type == EVENT_PEN) {
@@ -1835,6 +1925,7 @@ void goodix_ts_esd_uninit(struct goodix_ts_core *cd)
 	goodix_ts_unregister_notifier(&ts_esd->esd_notifier);
 }
 
+#if !IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 static void goodix_ts_release_connects(struct goodix_ts_core *core_data)
 {
 	struct input_dev *input_dev = core_data->input_dev;
@@ -1852,6 +1943,30 @@ static void goodix_ts_release_connects(struct goodix_ts_core *core_data)
 
 	mutex_unlock(&input_dev->mutex);
 }
+#endif
+
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+static void goodix_ts_release_connects_goog(struct goodix_ts_core *core_data)
+{
+	struct input_dev *input_dev = core_data->input_dev;
+	struct goog_touch_interface *gti = core_data->gti;
+	int i;
+
+	goog_input_lock(gti);
+
+	goog_input_set_timestamp(gti, input_dev, KTIME_RELEASE_ALL);
+	for (i = 0; i < GOODIX_MAX_TOUCH; i++) {
+		goog_input_mt_slot(gti, input_dev, i);
+		goog_input_mt_report_slot_state(
+			gti, input_dev, MT_TOOL_FINGER, false);
+	}
+	goog_input_report_key(gti, input_dev, BTN_TOUCH, 0);
+	goog_input_sync(gti, input_dev);
+	goog_input_process(gti);
+
+	goog_input_unlock(gti);
+}
+#endif
 
 /**
  * goodix_ts_suspend - Touchscreen suspend function
@@ -1930,7 +2045,12 @@ static int goodix_ts_suspend(struct goodix_ts_core *core_data)
 	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
 
 out:
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+	goodix_ts_release_connects_goog(core_data);
+#else
 	goodix_ts_release_connects(core_data);
+#endif
+
 	ts_info("Suspend end");
 	return 0;
 }
@@ -2109,6 +2229,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 		misc->fw_log_len + sizeof(struct goodix_mutual_data) +
 		mutual_size + sizeof(struct goodix_self_sensing_data) +
 		self_sensing_size;
+	struct gti_optional_configuration *options;
 
 	/* alloc/config/register input device */
 	ret = goodix_ts_input_dev_config(cd);
@@ -2176,6 +2297,16 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 		ts_err("failed set init apis");
 		goto err_init_apis;
 	}
+
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+	options = devm_kzalloc(&cd->pdev->dev,
+		sizeof(struct gti_optional_configuration), GFP_KERNEL);
+	options->get_mutual_sensor_data = get_mutual_sensor_data;
+	options->get_self_sensor_data = get_self_sensor_data;
+
+	cd->gti = goog_touch_interface_probe(
+		cd, cd->bus->dev, cd->input_dev, gti_default_handler, options);
+#endif
 
 	/* create procfs files */
 	ret = goodix_ts_procfs_init(cd);
@@ -2538,6 +2669,9 @@ static int goodix_ts_remove(struct platform_device *pdev)
 		goodix_ts_input_dev_remove(core_data);
 		goodix_ts_pen_dev_remove(core_data);
 		goodix_ts_sysfs_exit(core_data);
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+		goog_touch_interface_remove(core_data->gti);
+#endif
 		touch_apis_deinit(&core_data->pdev->dev);
 		goodix_ts_procfs_exit(core_data);
 		goodix_ts_power_off(core_data);
