@@ -1503,8 +1503,6 @@ int brl_set_heatmap_enabled(struct goodix_ts_core *cd, bool enabled)
 {
 	struct goodix_ts_cmd cmd;
 
-	cd->hw_ops->irq_enable(cd, false);
-
 	cmd.cmd = GOODIX_CMD_SET_HEATMAP_ENABLED;
 	cmd.len = 5;
 	cmd.data[0] = enabled ? 2 : 0;
@@ -1512,7 +1510,6 @@ int brl_set_heatmap_enabled(struct goodix_ts_core *cd, bool enabled)
 		ts_err("failed to set heatmap enabled: %s",
 			enabled ? "enabled" : "disabled");
 
-	cd->hw_ops->irq_enable(cd, true);
 	return 0;
 }
 
