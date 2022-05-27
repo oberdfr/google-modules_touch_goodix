@@ -590,6 +590,10 @@ struct goodix_ts_hw_ops {
 	int (*set_continuously_report_enabled)(
 		struct goodix_ts_core *cd, bool enabled);
 	int (*set_heatmap_enabled)(struct goodix_ts_core *cd, bool enabled);
+	int (*set_palm_enabled)(struct goodix_ts_core *cd, bool enabled);
+	int (*get_palm_enabled)(struct goodix_ts_core *cd, bool* enabled);
+	int (*set_grip_enabled)(struct goodix_ts_core *cd, bool enabled);
+	int (*get_grip_enabled)(struct goodix_ts_core *cd, bool* enabled);
 };
 
 /*

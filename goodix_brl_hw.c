@@ -1547,6 +1547,70 @@ int brl_set_heatmap_enabled(struct goodix_ts_core *cd, bool enabled)
 	return ret;
 }
 
+#define GOODIX_FEATURE_STATUS_ADDR 0x1021A
+#define GOODIX_CMD_SET_CUSTOM_MODE 0xC7
+#define CUSTOM_MODE_PALM 0
+#define CUSTOM_MODE_GRIP 3
+#define CUSTOM_MODE_MASK_PALM 0x02
+#define CUSTOM_MODE_MASK_GRIP 0x04
+int brl_set_palm_enabled(struct goodix_ts_core *cd, bool enabled)
+{
+	struct goodix_ts_cmd cmd = {0};
+
+	cmd.cmd = GOODIX_CMD_SET_CUSTOM_MODE;
+	cmd.len = 6;
+	cmd.data[0] = CUSTOM_MODE_PALM;
+	cmd.data[1] = enabled ? 0 : 1;
+	if (cd->hw_ops->send_cmd(cd, &cmd))
+		ts_err("failed to set palm: %s",
+			enabled ? "enabled" : "disabled");
+
+	return 0;
+}
+
+int brl_get_palm_enabled(struct goodix_ts_core *cd, bool* enabled)
+{
+	int ret = 0;
+	u8 val;
+
+	ret = cd->hw_ops->read(cd, GOODIX_FEATURE_STATUS_ADDR, &val, 1);
+	if (ret != 0) {
+		ts_err("failed to get palm enabled, ret: %d", ret);
+		*enabled = false;
+	}
+	*enabled = (val & CUSTOM_MODE_MASK_PALM) == 0;
+	return ret;
+}
+
+int brl_set_grip_enabled(struct goodix_ts_core *cd, bool enabled)
+{
+	struct goodix_ts_cmd cmd = {0};
+
+	cmd.cmd = GOODIX_CMD_SET_CUSTOM_MODE;
+	cmd.len = 6;
+	cmd.data[0] = CUSTOM_MODE_GRIP;
+	cmd.data[1] = enabled ? 1 : 0;
+	if (cd->hw_ops->send_cmd(cd, &cmd))
+		ts_err("failed to set palm: %s",
+			enabled ? "enabled" : "disabled");
+
+	return 0;
+}
+
+int brl_get_grip_enabled(struct goodix_ts_core *cd, bool* enabled)
+{
+	int ret = 0;
+	u8 val;
+
+	ret = cd->hw_ops->read(cd, GOODIX_FEATURE_STATUS_ADDR, &val, 1);
+	if (ret != 0) {
+		ts_err("failed to get palm enabled, ret: %d", ret);
+		*enabled = false;
+	}
+	*enabled = (val & CUSTOM_MODE_MASK_GRIP) != 0;
+	return ret;
+}
+
 static struct goodix_ts_hw_ops brl_hw_ops = {
 	.power_on = brl_power_on,
 	.resume = brl_resume,
@@ -1570,6 +1634,10 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 	.set_scan_mode = brl_set_scan_mode,
 	.set_continuously_report_enabled = brl_set_continuously_report_enabled,
 	.set_heatmap_enabled = brl_set_heatmap_enabled,
+	.set_palm_enabled = brl_set_palm_enabled,
+	.get_palm_enabled = brl_get_palm_enabled,
+	.set_grip_enabled = brl_set_grip_enabled,
+	.get_grip_enabled = brl_get_grip_enabled,
 };
 
 struct goodix_ts_hw_ops *goodix_get_hw_ops(void)

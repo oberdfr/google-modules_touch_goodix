@@ -885,6 +885,48 @@ static int set_continuous_report(
 		cmd->setting == GTI_CONTINUOUS_REPORT_ENABLE);
 }
 
+static int set_grip_enabled(struct goodix_ts_core *cd, bool enabled)
+{
+	return cd->hw_ops->set_grip_enabled(cd, enabled);
+}
+
+static int set_grip_mode(void *private_data, struct gti_grip_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return set_grip_enabled(cd, cmd->setting == GTI_GRIP_ENABLE);
+}
+
+static int get_grip_mode(void *private_data, struct gti_grip_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	bool enabled = false;
+
+	cd->hw_ops->get_grip_enabled(cd, &enabled);
+	cmd->setting = enabled ? GTI_GRIP_ENABLE : GTI_GRIP_DISABLE;
+	return 0;
+}
+
+static int set_palm_enabled(struct goodix_ts_core *cd, bool enabled)
+{
+	return cd->hw_ops->set_palm_enabled(cd, enabled);
+}
+
+static int set_palm_mode(void *private_data, struct gti_palm_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return set_palm_enabled(cd, cmd->setting == GTI_PALM_ENABLE);
+}
+
+static int get_palm_mode(void *private_data, struct gti_palm_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	bool enabled = false;
+
+	cd->hw_ops->get_palm_enabled(cd, &enabled);
+	cmd->setting = enabled ? GTI_PALM_ENABLE : GTI_PALM_DISABLE;
+	return 0;
+}
+
 #endif
 
 /* prosfs create */
@@ -2348,6 +2390,10 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	options->get_mutual_sensor_data = get_mutual_sensor_data;
 	options->get_self_sensor_data = get_self_sensor_data;
 	options->set_continuous_report = set_continuous_report;
+	options->set_grip_mode = set_grip_mode;
+	options->get_grip_mode = get_grip_mode;
+	options->set_palm_mode = set_palm_mode;
+	options->get_palm_mode = get_palm_mode;
 
 	cd->gti = goog_touch_interface_probe(
 		cd, cd->bus->dev, cd->input_dev, gti_default_handler, options);
