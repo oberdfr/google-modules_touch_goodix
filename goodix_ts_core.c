@@ -927,6 +927,36 @@ static int get_palm_mode(void *private_data, struct gti_palm_cmd *cmd)
 	return 0;
 }
 
+static int goodix_set_screen_protector_mode_enabled(
+	struct goodix_ts_core *cd, bool enabled)
+{
+	int ret = 0;
+	ret = cd->hw_ops->set_screen_protector_mode_enabled(cd, enabled);
+	if (ret == 0)
+		cd->screen_protector_mode_enabled = enabled;
+	return ret;
+}
+
+static int set_screen_protector_mode(
+	void *private_data, struct gti_screen_protector_mode_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return goodix_set_screen_protector_mode_enabled(
+		cd, cmd->setting == GTI_SCREEN_PROTECTOR_MODE_ENABLE);
+}
+
+static int get_screen_protector_mode(
+	void *private_data, struct gti_screen_protector_mode_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	bool enabled = false;
+
+	cd->hw_ops->get_screen_protector_mode_enabled(cd, &enabled);
+	cmd->setting = enabled ? GTI_SCREEN_PROTECTOR_MODE_ENABLE :
+		GTI_SCREEN_PROTECTOR_MODE_DISABLE;
+	return 0;
+}
+
 #endif
 
 /* prosfs create */
@@ -2394,6 +2424,8 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	options->get_grip_mode = get_grip_mode;
 	options->set_palm_mode = set_palm_mode;
 	options->get_palm_mode = get_palm_mode;
+	options->set_screen_protector_mode = set_screen_protector_mode;
+	options->get_screen_protector_mode = get_screen_protector_mode;
 
 	cd->gti = goog_touch_interface_probe(
 		cd, cd->bus->dev, cd->input_dev, gti_default_handler, options);

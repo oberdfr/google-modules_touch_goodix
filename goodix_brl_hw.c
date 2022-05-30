@@ -1553,22 +1553,23 @@ int brl_set_heatmap_enabled(struct goodix_ts_core *cd, bool enabled)
 #define CUSTOM_MODE_GRIP 3
 #define CUSTOM_MODE_MASK_PALM 0x02
 #define CUSTOM_MODE_MASK_GRIP 0x04
+#define CUSTOM_MODE_MASK_SCREEN_PROTECTOR 0x40
 int brl_set_palm_enabled(struct goodix_ts_core *cd, bool enabled)
 {
-	struct goodix_ts_cmd cmd = {0};
+	struct goodix_ts_cmd cmd = { 0 };
 
 	cmd.cmd = GOODIX_CMD_SET_CUSTOM_MODE;
 	cmd.len = 6;
 	cmd.data[0] = CUSTOM_MODE_PALM;
 	cmd.data[1] = enabled ? 0 : 1;
 	if (cd->hw_ops->send_cmd(cd, &cmd))
-		ts_err("failed to set palm: %s",
-			enabled ? "enabled" : "disabled");
+		ts_err("failed to %s palm mode",
+			enabled ? "enable" : "disable");
 
 	return 0;
 }
 
-int brl_get_palm_enabled(struct goodix_ts_core *cd, bool* enabled)
+int brl_get_palm_enabled(struct goodix_ts_core *cd, bool *enabled)
 {
 	int ret = 0;
 	u8 val;
@@ -1577,6 +1578,7 @@ int brl_get_palm_enabled(struct goodix_ts_core *cd, bool* enabled)
 	if (ret != 0) {
 		ts_err("failed to get palm enabled, ret: %d", ret);
 		*enabled = false;
+		return ret;
 	}
 	*enabled = (val & CUSTOM_MODE_MASK_PALM) == 0;
 	return ret;
@@ -1584,30 +1586,64 @@ int brl_get_palm_enabled(struct goodix_ts_core *cd, bool* enabled)
 
 int brl_set_grip_enabled(struct goodix_ts_core *cd, bool enabled)
 {
-	struct goodix_ts_cmd cmd = {0};
+	struct goodix_ts_cmd cmd = { 0 };
 
 	cmd.cmd = GOODIX_CMD_SET_CUSTOM_MODE;
 	cmd.len = 6;
 	cmd.data[0] = CUSTOM_MODE_GRIP;
 	cmd.data[1] = enabled ? 1 : 0;
 	if (cd->hw_ops->send_cmd(cd, &cmd))
-		ts_err("failed to set palm: %s",
-			enabled ? "enabled" : "disabled");
+		ts_err("failed to %s grip mode",
+			enabled ? "enable" : "disable");
 
 	return 0;
 }
 
-int brl_get_grip_enabled(struct goodix_ts_core *cd, bool* enabled)
+int brl_get_grip_enabled(struct goodix_ts_core *cd, bool *enabled)
 {
 	int ret = 0;
 	u8 val;
 
 	ret = cd->hw_ops->read(cd, GOODIX_FEATURE_STATUS_ADDR, &val, 1);
 	if (ret != 0) {
-		ts_err("failed to get palm enabled, ret: %d", ret);
+		ts_err("failed to get grip enabled, ret: %d", ret);
 		*enabled = false;
+		return ret;
 	}
 	*enabled = (val & CUSTOM_MODE_MASK_GRIP) != 0;
+	return ret;
+}
+
+#define GOODIX_CMD_SET_SCREEN_PROTECTOR_ENABLED 0x72
+int brl_set_screen_protector_mode_enabled(
+	struct goodix_ts_core *cd, bool enabled)
+{
+	struct goodix_ts_cmd cmd = { 0 };
+
+	cmd.cmd = GOODIX_CMD_SET_SCREEN_PROTECTOR_ENABLED;
+	cmd.len = 5;
+	cmd.data[0] = enabled ? 1 : 0;
+	if (cd->hw_ops->send_cmd(cd, &cmd))
+		ts_err("failed to %s screen protector mode",
+			enabled ? "enable" : "disable");
+
+	return 0;
+}
+
+int brl_get_screen_protector_mode_enabled(
+	struct goodix_ts_core *cd, bool *enabled)
+{
+	int ret = 0;
+	u8 val;
+
+	ret = cd->hw_ops->read(cd, GOODIX_FEATURE_STATUS_ADDR, &val, 1);
+	if (ret != 0) {
+		ts_err("failed to get screen protector mode enabled, ret: %d",
+			ret);
+		*enabled = false;
+		return ret;
+	}
+	*enabled = (val & CUSTOM_MODE_MASK_SCREEN_PROTECTOR) != 0;
 	return ret;
 }
 
@@ -1638,6 +1674,10 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 	.get_palm_enabled = brl_get_palm_enabled,
 	.set_grip_enabled = brl_set_grip_enabled,
 	.get_grip_enabled = brl_get_grip_enabled,
+	.set_screen_protector_mode_enabled =
+		brl_set_screen_protector_mode_enabled,
+	.get_screen_protector_mode_enabled =
+		brl_get_screen_protector_mode_enabled,
 };
 
 struct goodix_ts_hw_ops *goodix_get_hw_ops(void)

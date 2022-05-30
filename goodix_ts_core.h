@@ -594,6 +594,10 @@ struct goodix_ts_hw_ops {
 	int (*get_palm_enabled)(struct goodix_ts_core *cd, bool* enabled);
 	int (*set_grip_enabled)(struct goodix_ts_core *cd, bool enabled);
 	int (*get_grip_enabled)(struct goodix_ts_core *cd, bool* enabled);
+	int (*set_screen_protector_mode_enabled)(
+		struct goodix_ts_core *cd, bool enabled);
+	int (*get_screen_protector_mode_enabled)(
+		struct goodix_ts_core *cd, bool* enabled);
 };
 
 /*
@@ -654,6 +658,7 @@ struct goodix_ts_core {
 
 	atomic_t irq_enabled;
 	atomic_t suspended;
+	bool screen_protector_mode_enabled;
 	/* when this flag is true, driver should not clean the sync flag */
 	bool tools_ctrl_sync;
 
