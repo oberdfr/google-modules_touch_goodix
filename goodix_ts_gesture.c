@@ -239,11 +239,13 @@ static int gsx_gesture_ist(
 	ret = hw_ops->event_handler(cd, &gs_event);
 	if (ret) {
 		ts_err("failed get gesture data");
+		cd->hw_ops->gesture(cd, 0);
 		goto re_send_ges_cmd;
 	}
 
 	if (!(gs_event.event_type & EVENT_GESTURE)) {
 		ts_err("invalid event type: 0x%x", cd->ts_event.event_type);
+		cd->hw_ops->gesture(cd, 0);
 		goto re_send_ges_cmd;
 	}
 

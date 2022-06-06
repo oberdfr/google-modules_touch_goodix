@@ -12,6 +12,7 @@
 #define CMD_AUTO_NOISE_TEST "auto_noise_test"
 #define CMD_SHORT_TEST "short_test"
 #define CMD_GET_PACKAGE_ID "get_package_id"
+#define CMD_GET_MCU_ID "get_mcu_id"
 #define CMD_GET_VERSION "get_version"
 #define CMD_GET_RAWDATA "get_raw"
 #define CMD_GET_DIFFDATA "get_diff"
@@ -46,16 +47,17 @@
 
 char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_SELF_OPEN_TEST, CMD_NOISE_TEST, CMD_AUTO_NOISE_TEST, CMD_SHORT_TEST,
-	CMD_GET_PACKAGE_ID, CMD_GET_VERSION, CMD_GET_RAWDATA, CMD_GET_DIFFDATA,
-	CMD_GET_BASEDATA, CMD_GET_SELF_RAWDATA, CMD_GET_SELF_DIFFDATA,
-	CMD_GET_SELF_BASEDATA, CMD_SET_DOUBLE_TAP, CMD_SET_SINGLE_TAP,
-	CMD_SET_LONG_PRESS, CMD_SET_ST_PARAM, CMD_SET_LP_PARAM,
-	CMD_SET_CHARGE_MODE, CMD_SET_IRQ_ENABLE, CMD_SET_ESD_ENABLE,
-	CMD_SET_DEBUG_LOG, CMD_SET_SCAN_MODE, CMD_GET_SCAN_MODE,
-	CMD_SET_CONTINUE_MODE, CMD_GET_CHANNEL_NUM, CMD_GET_TX_FREQ, CMD_RESET,
-	CMD_SET_SENSE_MODE, CMD_GET_CONFIG, CMD_GET_FW_STATUS,
-	CMD_SET_HIGHSENSE_MODE, CMD_SET_GRIP_DATA, CMD_SET_PALM_MODE,
-	CMD_SET_NOISE_MODE, CMD_SET_WATER_MODE, CMD_SET_HEATMAP, NULL };
+	CMD_GET_PACKAGE_ID, CMD_GET_MCU_ID, CMD_GET_VERSION, CMD_GET_RAWDATA,
+	CMD_GET_DIFFDATA, CMD_GET_BASEDATA, CMD_GET_SELF_RAWDATA,
+	CMD_GET_SELF_DIFFDATA, CMD_GET_SELF_BASEDATA, CMD_SET_DOUBLE_TAP,
+	CMD_SET_SINGLE_TAP, CMD_SET_LONG_PRESS, CMD_SET_ST_PARAM,
+	CMD_SET_LP_PARAM, CMD_SET_CHARGE_MODE, CMD_SET_IRQ_ENABLE,
+	CMD_SET_ESD_ENABLE, CMD_SET_DEBUG_LOG, CMD_SET_SCAN_MODE,
+	CMD_GET_SCAN_MODE, CMD_SET_CONTINUE_MODE, CMD_GET_CHANNEL_NUM,
+	CMD_GET_TX_FREQ, CMD_RESET, CMD_SET_SENSE_MODE, CMD_GET_CONFIG,
+	CMD_GET_FW_STATUS, CMD_SET_HIGHSENSE_MODE, CMD_SET_GRIP_DATA,
+	CMD_SET_PALM_MODE, CMD_SET_NOISE_MODE, CMD_SET_WATER_MODE,
+	CMD_SET_HEATMAP, NULL };
 
 /* test limits keyword */
 #define CSV_TP_SPECIAL_RAW_MIN "special_raw_min"
@@ -688,20 +690,24 @@ static int goodix_shortcircut_analysis(void)
 {
 	int ret;
 	int err = 0;
+	u8 temp_buf[62];
 	test_result_t test_result;
 
-	ret = cd->hw_ops->read(cd, SHORT_TEST_RESULT_REG_NOT,
-		(u8 *)&test_result, sizeof(test_result));
+	ret = cd->hw_ops->read(
+		cd, SHORT_TEST_RESULT_REG_NOT, temp_buf, sizeof(temp_buf));
 	if (ret < 0) {
 		ts_err("Read TEST_RESULT_REG failed");
 		return ret;
 	}
 
-	if (checksum_cmp((u8 *)&test_result, sizeof(test_result),
+	if (checksum_cmp(&temp_buf[sizeof(test_result)],
+		    sizeof(temp_buf) - sizeof(test_result),
 		    CHECKSUM_MODE_U8_LE)) {
-		ts_err("shrot result checksum err");
+		ts_err("short result checksum err");
 		return -EINVAL;
 	}
+
+	memcpy((u8 *)&test_result, temp_buf, sizeof(test_result));
 
 	if (!(test_result.result & 0x0F)) {
 		ts_info(">>>>> No shortcircut");
@@ -2206,7 +2212,7 @@ static void goodix_get_scan_mode(void)
 {
 	u8 status;
 
-	cd->hw_ops->read(cd, 0x10218, &status, 1);
+	cd->hw_ops->read(cd, 0x10219, &status, 1);
 	ts_info("ic status:%d", status);
 
 	if (status == 1) {
@@ -2559,13 +2565,19 @@ static void goodix_set_heatmap(int val)
 	if (val == 0) {
 		index = sprintf(rbuf, "disable heatmap\n");
 		temp_cmd.len = 5;
+		temp_cmd.cmd = 0xC9;
+		temp_cmd.data[0] = 0;
+		cd->hw_ops->send_cmd(cd, &temp_cmd);
 		temp_cmd.cmd = 0x90;
 		temp_cmd.data[0] = 0;
 	} else {
 		index = sprintf(rbuf, "enable heatmap\n");
 		temp_cmd.len = 5;
+		temp_cmd.cmd = 0xC9;
+		temp_cmd.data[0] = 1;
+		cd->hw_ops->send_cmd(cd, &temp_cmd);
 		temp_cmd.cmd = 0x90;
-		temp_cmd.data[0] = 2;
+		temp_cmd.data[0] = 0x82;
 	}
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 	cd->hw_ops->irq_enable(cd, true);
@@ -2956,6 +2968,16 @@ static ssize_t driver_test_write(
 		else
 			index = sprintf(
 				rbuf, "%s: 0x%x\n", CMD_GET_PACKAGE_ID, id);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_GET_MCU_ID, strlen(CMD_GET_MCU_ID))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		ret = goodix_flash_read(0x1F314, &id, 1);
+		if (ret < 0)
+			index = sprintf(rbuf, "%s: NG\n", CMD_GET_MCU_ID);
+		else
+			index = sprintf(rbuf, "%s: 0x%x\n", CMD_GET_MCU_ID, id);
 		goto exit;
 	}
 

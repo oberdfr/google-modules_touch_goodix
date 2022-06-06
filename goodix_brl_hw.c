@@ -1249,11 +1249,16 @@ static int brl_after_event_handler(struct goodix_ts_core *cd)
 {
 	struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
 	struct goodix_ic_info_misc *misc = &cd->ic_info.misc;
-	u8 sync_clean = 0;
+	u8 sync_clean[1] = { 0 };
+	int ret = 0;
 
 	if (cd->tools_ctrl_sync)
 		return 0;
-	return hw_ops->write(cd, misc->touch_data_addr, &sync_clean, 1);
+
+	ret = hw_ops->write(cd, misc->touch_data_addr, sync_clean, sizeof(sync_clean));
+	if (ret != 0)
+		return ret;
+	return hw_ops->write(cd, misc->frame_data_addr, sync_clean, sizeof(sync_clean));
 }
 
 static int brld_get_framedata(
@@ -1498,19 +1503,33 @@ int brl_set_continuously_report_enabled(struct goodix_ts_core *cd, bool enabled)
 	return 0;
 }
 
-#define GOODIX_CMD_SET_HEATMAP_ENABLED 0x90
+#define GOODIX_CMD_SET_FRAMEDATA_ENABLED 0x90
+#define GOODIX_CMD_SET_HEATMAP_ENABLED 0xC9
 int brl_set_heatmap_enabled(struct goodix_ts_core *cd, bool enabled)
 {
 	struct goodix_ts_cmd cmd;
+	int ret = 0;
 
 	cmd.cmd = GOODIX_CMD_SET_HEATMAP_ENABLED;
 	cmd.len = 5;
-	cmd.data[0] = enabled ? 2 : 0;
-	if (cd->hw_ops->send_cmd(cd, &cmd))
-		ts_err("failed to set heatmap enabled: %s",
-			enabled ? "enabled" : "disabled");
+	cmd.data[0] = enabled ? 1 : 0;
+	ret = cd->hw_ops->send_cmd(cd, &cmd);
+	if (ret != 0) {
+		ts_err("failed to set heatmap %s, err: %d",
+			enabled ? "enabled" : "disabled", ret);
+		return ret;
+	}
 
-	return 0;
+	cmd.cmd = GOODIX_CMD_SET_FRAMEDATA_ENABLED;
+	cmd.len = 5;
+	cmd.data[0] = enabled ? 0x82 : 0;
+	ret = cd->hw_ops->send_cmd(cd, &cmd);
+	if (ret != 0) {
+		ts_err("failed to set framedata %s, err: %d",
+			enabled ? "enabled" : "disabled", ret);
+		return ret;
+	}
+	return ret;
 }
 
 static struct goodix_ts_hw_ops brl_hw_ops = {
