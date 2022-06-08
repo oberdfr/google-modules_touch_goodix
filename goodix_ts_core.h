@@ -550,6 +550,7 @@ struct goodix_bus_interface {
 	struct device *dev;
 	u8 *rx_buf;
 	u8 *tx_buf;
+	struct mutex mutex;
 	int (*read)(struct device *dev, unsigned int addr, unsigned char *data,
 		unsigned int len);
 	int (*read_fast)(struct device *dev, unsigned int addr,
