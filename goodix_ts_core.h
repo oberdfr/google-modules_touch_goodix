@@ -53,7 +53,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.0.10"
+#define GOODIX_DRIVER_VERSION "v1.0.11"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -351,6 +351,24 @@ struct goodix_ts_cmd {
 		u8 buf[MAX_CMD_BUF_LEN];
 	};
 };
+
+struct goodix_status_data {
+	u8 water_change : 1;
+	u8 hop_change : 1;
+	u8 base_update : 1;
+	u8 soft_reset : 1;
+	u8 palm_change : 1;
+	u8 noise_lv_change : 1;
+	u8 water_sta;
+	u8 before_factorA;
+	u8 after_factorA;
+	u8 base_update_type;
+	u8 soft_reset_type;
+	u8 palm_sta;
+	u8 noise_lv;
+	u8 res[11];
+	u8 checksum;
+};
 #pragma pack()
 
 /* interrupt event type */
@@ -360,6 +378,7 @@ enum ts_event_type {
 	EVENT_PEN = (1 << 1),	/* pen event */
 	EVENT_REQUEST = (1 << 2),
 	EVENT_GESTURE = (1 << 3),
+	EVENT_STATUS = (1 << 4),
 };
 
 enum ts_request_type {
@@ -430,27 +449,37 @@ struct goodix_ts_event {
 	u8 gesture_data[GOODIX_GESTURE_DATA_LEN];
 	struct goodix_touch_data touch_data;
 	struct goodix_pen_data pen_data;
+	struct goodix_status_data status_data;
 };
 
 struct goodix_ts_event_data {
-	u8 fp_flag : 4;
+	u8 reserved1 : 1;
+	u8 status_changed : 1;
+	u8 reserved2 : 1;
+	u8 fp_flag : 1;
 	u8 type : 4;
 	u8 int_count;
 };
 
 struct goodix_ts_request_event_data {
-	u8 fp_flag : 4;
+	u8 reserved1 : 1;
+	u8 status_changed : 1;
+	u8 reserved2 : 1;
+	u8 fp_flag : 1;
 	u8 type : 4;
 	u8 int_count;
 	u8 request_type;
-	u8 reserved1;
-	u8 reserved2;
 	u8 reserved3;
+	u8 reserved4;
+	u8 reserved5;
 	u16 checksum;
 };
 
 struct goodix_ts_touch_event_data {
-	u8 fp_flag : 4;
+	u8 reserved1 : 1;
+	u8 status_changed : 1;
+	u8 reserved2 : 1;
+	u8 fp_flag : 1;
 	u8 type : 4;
 	u8 int_count;
 	u8 touches : 4;
@@ -459,24 +488,27 @@ struct goodix_ts_touch_event_data {
 	u8 edge_flag : 1;
 	u8 reset_int : 1;
 	u8 custom_coor_info_flag : 1;
-	u8 reserved1 : 7;
-	u16 reserved2;
+	u8 reserved3 : 7;
+	u16 reserved4;
 	u16 checksum;
 	u8 data[0];
 };
 
 struct goodix_ts_gesture_event_data {
-	u8 fp_flag : 4;
+	u8 reserved1 : 1;
+	u8 status_changed : 1;
+	u8 reserved2 : 1;
+	u8 fp_flag : 1;
 	u8 type : 4;
 	u8 int_count;
-	u8 reserved1 : 4;
+	u8 reserved3 : 4;
 	u8 large_touch : 1;
 	u8 hover_approach_flag : 1;
 	u8 edge_flag : 1;
 	u8 reset_int : 1;
 	u8 touches;
 	u8 gesture_type;
-	u8 reserved3;
+	u8 reserved4;
 	u16 checksum;
 	u8 data[0];
 };
@@ -806,5 +838,6 @@ void goodix_tools_exit(void);
 int driver_test_proc_init(struct goodix_ts_core *core_data);
 void driver_test_proc_remove(void);
 int goodix_do_inspect(struct goodix_ts_core *cd, struct ts_rawdata_info *info);
+void goodix_ts_report_status(struct goodix_ts_event *ts_event);
 
 #endif

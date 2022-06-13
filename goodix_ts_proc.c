@@ -40,6 +40,7 @@
 #define CMD_GET_FW_STATUS "get_fw_status"
 #define CMD_SET_HIGHSENSE_MODE "set_highsense_mode"
 #define CMD_SET_GRIP_DATA "set_grip_data"
+#define CMD_SET_GRIP_MODE "set_grip_mode"
 #define CMD_SET_PALM_MODE "set_palm_mode"
 #define CMD_SET_NOISE_MODE "set_noise_mode"
 #define CMD_SET_WATER_MODE "set_water_mode"
@@ -56,8 +57,8 @@ char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_GET_SCAN_MODE, CMD_SET_CONTINUE_MODE, CMD_GET_CHANNEL_NUM,
 	CMD_GET_TX_FREQ, CMD_RESET, CMD_SET_SENSE_MODE, CMD_GET_CONFIG,
 	CMD_GET_FW_STATUS, CMD_SET_HIGHSENSE_MODE, CMD_SET_GRIP_DATA,
-	CMD_SET_PALM_MODE, CMD_SET_NOISE_MODE, CMD_SET_WATER_MODE,
-	CMD_SET_HEATMAP, NULL };
+	CMD_SET_GRIP_MODE, CMD_SET_PALM_MODE, CMD_SET_NOISE_MODE,
+	CMD_SET_WATER_MODE, CMD_SET_HEATMAP, NULL };
 
 /* test limits keyword */
 #define CSV_TP_SPECIAL_RAW_MIN "special_raw_min"
@@ -73,6 +74,7 @@ char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 #define PALM_FUNC 0
 #define NOISE_FUNC 1
 #define WATER_FUNC 2
+#define GRIP_FUNC 3
 
 #define SHORT_SIZE 150
 #define LARGE_SIZE 4096
@@ -2280,6 +2282,16 @@ static void goodix_get_fw_status(void)
 	status_addr = offset + 38;
 	noise_lv_addr = offset + 65;
 
+	cd->hw_ops->read(cd, 0x1021A, &val, 1);
+	index +=
+		sprintf(&rbuf[index], "set_noise_mode[%d] ", (val >> 4) & 0x03);
+	index +=
+		sprintf(&rbuf[index], "set_water_mode[%d] ", (val >> 3) & 0x01);
+	index += sprintf(&rbuf[index], "set_grip_mode[%d] ", (val >> 2) & 0x01);
+	index += sprintf(&rbuf[index], "set_palm_mode[%d] ", (val >> 1) & 0x01);
+	index += sprintf(
+		&rbuf[index], "set_heatmap_mode[%d]\n", (val >> 0) & 0x01);
+
 	cd->hw_ops->read(cd, status_addr, &val, 1);
 	ts_info("addr:0x%04x fw_status:0x%02X", status_addr, val);
 	index += sprintf(
@@ -2372,6 +2384,9 @@ static void goodix_set_custom_mode(u8 type, u8 val)
 		}
 	} else if (type == WATER_FUNC) {
 		index = sprintf(&rbuf[index], "set water %s\n",
+			val ? "disabled" : "restore");
+	} else if (type == GRIP_FUNC) {
+		index = sprintf(&rbuf[index], "set grip %s\n",
 			val ? "disabled" : "restore");
 	} else {
 		ts_err("invalid type, %d", type);
@@ -3141,6 +3156,23 @@ static ssize_t driver_test_write(
 			goto exit;
 		}
 		goodix_set_grip_data(cmd_val);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_SET_GRIP_MODE, strlen(CMD_SET_GRIP_MODE))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_GRIP_MODE);
+			goto exit;
+		}
+		if (kstrtos32(p, 10, &cmd_val)) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_GRIP_MODE);
+			goto exit;
+		}
+		goodix_set_custom_mode(GRIP_FUNC, cmd_val);
 		goto exit;
 	}
 

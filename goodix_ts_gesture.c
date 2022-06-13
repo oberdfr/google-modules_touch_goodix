@@ -249,6 +249,9 @@ static int gsx_gesture_ist(
 		goto re_send_ges_cmd;
 	}
 
+	if (gs_event.event_type & EVENT_STATUS)
+		goodix_ts_report_status(&gs_event);
+
 	switch (gs_event.gesture_type) {
 	case GOODIX_GESTURE_SINGLE_TAP:
 		if (cd->gesture_type & GESTURE_SINGLE_TAP) {

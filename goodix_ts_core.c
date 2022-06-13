@@ -1386,6 +1386,30 @@ static irqreturn_t goodix_ts_isr(int irq, void *data)
 	return IRQ_WAKE_THREAD;
 }
 
+void goodix_ts_report_status(struct goodix_ts_event *ts_event)
+{
+	struct goodix_status_data *st = &ts_event->status_data;
+	int i;
+	u8 checksum = 0;
+	int len = sizeof(ts_event->status_data);
+	u8 *data = (u8 *)st;
+
+	for (i = 0; i < len - 1; i++)
+		checksum += data[i];
+	if (checksum != st->checksum) {
+		ts_err("status data checksum error");
+		return;
+	}
+
+	ts_info("noise_lv_change[%d] palm_change[%d] soft_reset[%d] base_update[%d] hop_change[%d] water_change[%d]",
+		st->noise_lv_change, st->palm_change, st->soft_reset,
+		st->base_update, st->hop_change, st->water_change);
+	ts_info("water_status[%d] before_factorA[%d] after_factorA[%d] base_update_type[0x%x] soft_reset_type[0x%x] palm_status[%d] noise_lv[%d]",
+		st->water_sta, st->before_factorA, st->after_factorA,
+		st->base_update_type, st->soft_reset_type, st->palm_sta,
+		st->noise_lv);
+}
+
 /**
  * goodix_ts_threadirq_func - Bottom half of interrupt
  * This functions is excuted in thread context,
@@ -1433,7 +1457,7 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	/* read touch data from touch device */
 	ret = hw_ops->event_handler(core_data, ts_event);
 	if (likely(!ret)) {
-		if (ts_event->event_type == EVENT_TOUCH) {
+		if (ts_event->event_type & EVENT_TOUCH) {
 			/* report touch */
 			core_data->coords_timestamp = core_data->isr_timestamp;
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
@@ -1445,12 +1469,14 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 #endif
 		}
 		if (core_data->board_data.pen_enable &&
-			ts_event->event_type == EVENT_PEN) {
+			ts_event->event_type & EVENT_PEN) {
 			goodix_ts_report_pen(
 				core_data->pen_dev, &ts_event->pen_data);
 		}
-		if (ts_event->event_type == EVENT_REQUEST)
+		if (ts_event->event_type & EVENT_REQUEST)
 			goodix_ts_request_handle(core_data, ts_event);
+		if (ts_event->event_type & EVENT_STATUS)
+			goodix_ts_report_status(ts_event);
 
 		/* read done */
 		hw_ops->after_event_handler(core_data);

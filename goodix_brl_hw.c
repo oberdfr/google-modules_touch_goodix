@@ -1000,6 +1000,7 @@ static int brl_esd_check(struct goodix_ts_core *cd)
 #define GOODIX_TOUCH_EVENT 0x80
 #define GOODIX_REQUEST_EVENT 0x40
 #define GOODIX_GESTURE_EVENT 0x20
+#define GOODIX_STATUS_EVENT 0x02
 #define GOODIX_FP_EVENT 0x08
 #define POINT_TYPE_STYLUS_HOVER 0x01
 #define POINT_TYPE_STYLUS 0x03
@@ -1178,6 +1179,9 @@ static int goodix_touch_handler(struct goodix_ts_core *cd,
 		}
 	}
 
+	if (event_data->status_changed)
+		ts_event->event_type |= EVENT_STATUS;
+
 	/* process custom info */
 	if (event_data->custom_coor_info_flag)
 		ts_debug("TODO add custom info process function");
@@ -1215,6 +1219,11 @@ static int brl_event_handler(
 	}
 
 	ts_event->event_type = EVENT_INVALID;
+	/* read status event */
+	if (event_data->status_changed)
+		hw_ops->read(cd, 0x1021C, (u8 *)&ts_event->status_data,
+			sizeof(ts_event->status_data));
+
 
 	if (event_data->type & (GOODIX_TOUCH_EVENT >> 4))
 		return goodix_touch_handler(cd, ts_event,
@@ -1237,6 +1246,8 @@ static int brl_event_handler(
 		struct goodix_ts_gesture_event_data *gesture =
 			(struct goodix_ts_gesture_event_data *)event_data;
 		ts_event->event_type = EVENT_GESTURE;
+		if (event_data->status_changed)
+			ts_event->event_type |= EVENT_STATUS;
 		ts_event->gesture_type = gesture->gesture_type;
 		memcpy(ts_event->gesture_data, gesture->data,
 			GOODIX_GESTURE_DATA_LEN);
