@@ -1401,13 +1401,14 @@ void goodix_ts_report_status(struct goodix_ts_event *ts_event)
 		return;
 	}
 
-	ts_info("noise_lv_change[%d] palm_change[%d] soft_reset[%d] base_update[%d] hop_change[%d] water_change[%d]",
-		st->noise_lv_change, st->palm_change, st->soft_reset,
-		st->base_update, st->hop_change, st->water_change);
-	ts_info("water_status[%d] before_factorA[%d] after_factorA[%d] base_update_type[0x%x] soft_reset_type[0x%x] palm_status[%d] noise_lv[%d]",
+	ts_info("grip_change[%d] noise_lv_change[%d] palm_change[%d] soft_reset[%d] base_update[%d] hop_change[%d] water_change[%d]",
+		st->grip_change, st->noise_lv_change, st->palm_change,
+		st->soft_reset, st->base_update, st->hop_change,
+		st->water_change);
+	ts_info("water_status[%d] before_factorA[%d] after_factorA[%d] base_update_type[0x%x] soft_reset_type[0x%x] palm_status[%d] noise_lv[%d] grip_type[%d]",
 		st->water_sta, st->before_factorA, st->after_factorA,
 		st->base_update_type, st->soft_reset_type, st->palm_sta,
-		st->noise_lv);
+		st->noise_lv, st->grip_type);
 }
 
 /**
@@ -2608,6 +2609,7 @@ static int goodix_ts_probe(struct platform_device *pdev)
 		core_module_prob_sate = CORE_MODULE_PROB_FAILED;
 		return -EINVAL;
 	}
+	mutex_init(&core_data->cmd_lock);
 	goodix_core_module_init();
 	/* touch core layer is a platform driver */
 	core_data->pdev = pdev;
@@ -2681,6 +2683,7 @@ err_init_tools:
 err_setup_gpio:
 	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
 err_out:
+	mutex_destroy(&core_data->cmd_lock);
 	core_data->init_stage = CORE_INIT_FAIL;
 	core_module_prob_sate = CORE_MODULE_PROB_FAILED;
 	ts_err("goodix_ts_core failed, ret:%d", ret);

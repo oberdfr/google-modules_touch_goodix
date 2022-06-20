@@ -389,6 +389,7 @@ static int brl_send_cmd(struct goodix_ts_core *cd, struct goodix_ts_cmd *cmd)
 	struct goodix_ic_info_misc *misc = &cd->ic_info.misc;
 	struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
 
+	mutex_lock(&cd->cmd_lock);
 	cmd->state = 0;
 	cmd->ack = 0;
 	goodix_append_checksum(
@@ -400,7 +401,7 @@ static int brl_send_cmd(struct goodix_ts_core *cd, struct goodix_ts_cmd *cmd)
 		ret = hw_ops->write(cd, misc->cmd_addr, cmd->buf, sizeof(*cmd));
 		if (ret < 0) {
 			ts_err("failed write command");
-			return ret;
+			goto exit;
 		}
 		for (i = 0; i < GOODIX_CMD_RETRY; i++) {
 			/* check command result */
@@ -408,12 +409,13 @@ static int brl_send_cmd(struct goodix_ts_core *cd, struct goodix_ts_cmd *cmd)
 				sizeof(cmd_ack));
 			if (ret < 0) {
 				ts_err("failed read command ack, %d", ret);
-				return ret;
+				goto exit;
 			}
 			ts_debug("cmd ack data %*ph", (int)sizeof(cmd_ack),
 				cmd_ack.buf);
 			if (cmd_ack.ack == CMD_ACK_OK) {
-				return 0;
+				ret = 0;
+				goto exit;
 			}
 			if (cmd_ack.ack == CMD_ACK_BUSY ||
 				cmd_ack.ack == 0x00) {
@@ -426,8 +428,11 @@ static int brl_send_cmd(struct goodix_ts_core *cd, struct goodix_ts_cmd *cmd)
 			break;
 		}
 	}
+	ret = -EINVAL;
 	ts_err("failed get valid cmd ack");
-	return -EINVAL;
+exit:
+	mutex_unlock(&cd->cmd_lock);
+	return ret;
 }
 
 #pragma pack(1)
@@ -1111,9 +1116,6 @@ static int goodix_touch_handler(struct goodix_ts_core *cd,
 	static u8 pre_finger_num;
 	static u8 pre_pen_num;
 
-	/* clean event buffer */
-	memset(ts_event, 0, sizeof(*ts_event));
-
 	if (event_data->touches > GOODIX_MAX_TOUCH) {
 		ts_debug("invalid touch num %d", event_data->touches);
 		return -EINVAL;
@@ -1218,12 +1220,14 @@ static int brl_event_handler(
 		return -EINVAL;
 	}
 
+	/* clean event buffer */
+	memset(ts_event, 0, sizeof(*ts_event));
+
 	ts_event->event_type = EVENT_INVALID;
 	/* read status event */
 	if (event_data->status_changed)
 		hw_ops->read(cd, 0x1021C, (u8 *)&ts_event->status_data,
 			sizeof(ts_event->status_data));
-
 
 	if (event_data->type & (GOODIX_TOUCH_EVENT >> 4))
 		return goodix_touch_handler(cd, ts_event,

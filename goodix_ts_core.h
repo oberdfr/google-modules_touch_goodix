@@ -53,7 +53,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.0.11"
+#define GOODIX_DRIVER_VERSION "v1.0.12"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -359,6 +359,7 @@ struct goodix_status_data {
 	u8 soft_reset : 1;
 	u8 palm_change : 1;
 	u8 noise_lv_change : 1;
+	u8 grip_change : 1;
 	u8 water_sta;
 	u8 before_factorA;
 	u8 after_factorA;
@@ -366,7 +367,8 @@ struct goodix_status_data {
 	u8 soft_reset_type;
 	u8 palm_sta;
 	u8 noise_lv;
-	u8 res[11];
+	u8 grip_type;
+	u8 res[10];
 	u8 checksum;
 };
 #pragma pack()
@@ -628,6 +630,7 @@ struct goodix_ts_core {
 	struct goodix_ts_hw_ops *hw_ops;
 	struct input_dev *input_dev;
 	struct input_dev *pen_dev;
+	struct mutex cmd_lock;
 	/* TODO counld we remove this from core data? */
 	struct goodix_ts_event ts_event;
 

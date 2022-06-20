@@ -852,18 +852,23 @@ typedef struct __attribute__((packed)) {
 #define FLASH_CMD_STATE_OKAY 0x07
 static int goodix_flash_cmd(uint8_t cmd, uint8_t status, int retry_count)
 {
-	struct goodix_ts_cmd temp_cmd;
+	u8 cmd_buf[] = { 0x00, 0x00, 0x04, 0x00, 0x00, 0x00 };
 	int ret;
 	int i;
 	u8 r_sta;
 
-	temp_cmd.len = 4;
-	temp_cmd.cmd = cmd;
-	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
+	cmd_buf[3] = cmd;
+	goodix_append_checksum(&cmd_buf[2], 2, CHECKSUM_MODE_U8_LE);
+	ret = cd->hw_ops->write(
+		cd, cd->ic_info.misc.cmd_addr, cmd_buf, sizeof(cmd_buf));
 	if (ret < 0)
 		return ret;
 
+	if (retry_count == 0)
+		return 0;
+
 	for (i = 0; i < retry_count; i++) {
+		usleep_range(2000, 2100);
 		ret = cd->hw_ops->read(
 			cd, cd->ic_info.misc.cmd_addr, &r_sta, 1);
 		if (ret == 0 && r_sta == status)
@@ -880,7 +885,6 @@ static int goodix_flash_read(u32 addr, u8 *buf, int len)
 	int ret;
 	u8 *tmp_buf;
 	u32 buffer_addr = cd->ic_info.misc.fw_buffer_addr;
-	struct goodix_ts_cmd temp_cmd;
 	uint32_t checksum = 0;
 	flash_head_info_t head_info;
 	u8 *p = (u8 *)&head_info.address;
@@ -922,8 +926,8 @@ static int goodix_flash_read(u32 addr, u8 *buf, int len)
 		goto read_end;
 	}
 
-	checksum = 0;
-	for (i = 0; i < len + sizeof(flash_head_info_t) - 4; i += 2)
+	checksum = len % 2 ? tmp_buf[len + sizeof(flash_head_info_t) - 1] : 0;
+	for (i = 0; i < len + sizeof(flash_head_info_t) - 6; i += 2)
 		checksum += tmp_buf[4 + i] | (tmp_buf[5 + i] << 8);
 
 	if (checksum != le32_to_cpup((__le32 *)tmp_buf)) {
@@ -935,9 +939,7 @@ static int goodix_flash_read(u32 addr, u8 *buf, int len)
 	memcpy(buf, tmp_buf + sizeof(flash_head_info_t), len);
 	ret = 0;
 read_end:
-	temp_cmd.len = 4;
-	temp_cmd.cmd = 0x0C;
-	cd->hw_ops->send_cmd(cd, &temp_cmd);
+	goodix_flash_cmd(0x0C, 0, 0);
 	return ret;
 }
 
@@ -978,8 +980,6 @@ static const struct seq_operations seq_ops = {
 
 static int driver_test_open(struct inode *inode, struct file *file)
 {
-	memset(wbuf, 0, sizeof(wbuf));
-
 	return seq_open(file, &seq_ops);
 }
 
@@ -1323,6 +1323,12 @@ static void goodix_save_test_result(bool is_brief)
 			index += sprintf(&rbuf[index], "%s\n",
 				ts_test->result[GTP_CAP_TEST] ? "PASS"
 							      : "FAIL");
+		}
+		if (ts_test->item[GTP_DELTA_TEST]) {
+			index += sprintf(&rbuf[index], "Delta test:\n");
+			index += sprintf(&rbuf[index], "%s\n",
+				ts_test->result[GTP_DELTA_TEST] ? "PASS"
+								: "FAIL");
 		}
 		if (ts_test->item[GTP_SHORT_TEST]) {
 			index += sprintf(&rbuf[index], "Short test:\n");
@@ -2283,6 +2289,8 @@ static void goodix_get_fw_status(void)
 	noise_lv_addr = offset + 65;
 
 	cd->hw_ops->read(cd, 0x1021A, &val, 1);
+	index += sprintf(
+		&rbuf[index], "set_highsense_mode[%d] ", (val >> 6) & 0x01);
 	index +=
 		sprintf(&rbuf[index], "set_noise_mode[%d] ", (val >> 4) & 0x03);
 	index +=
@@ -2615,6 +2623,7 @@ static ssize_t driver_test_write(
 		return count;
 	}
 
+	memset(wbuf, 0, sizeof(wbuf));
 	if (copy_from_user(p, buf, count) != 0) {
 		ts_err("copy from user failed");
 		return count;
@@ -2874,6 +2883,7 @@ static ssize_t driver_test_write(
 		}
 		ts_test->item[GTP_CAP_TEST] = true;
 		ts_test->item[GTP_NOISE_TEST] = true;
+		ts_test->item[GTP_DELTA_TEST] = true;
 		ts_test->item[GTP_SELFCAP_TEST] = true;
 		ts_test->item[GTP_SHORT_TEST] = true;
 		goodix_auto_test(true);
@@ -2977,7 +2987,10 @@ static ssize_t driver_test_write(
 
 	if (!strncmp(p, CMD_GET_PACKAGE_ID, strlen(CMD_GET_PACKAGE_ID))) {
 		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		mutex_lock(&cd->cmd_lock);
+		usleep_range(6000, 6100);
 		ret = goodix_flash_read(0x1F301, &id, 1);
+		mutex_unlock(&cd->cmd_lock);
 		if (ret < 0)
 			index = sprintf(rbuf, "%s: NG\n", CMD_GET_PACKAGE_ID);
 		else
@@ -2988,7 +3001,10 @@ static ssize_t driver_test_write(
 
 	if (!strncmp(p, CMD_GET_MCU_ID, strlen(CMD_GET_MCU_ID))) {
 		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		mutex_lock(&cd->cmd_lock);
+		usleep_range(6000, 6100);
 		ret = goodix_flash_read(0x1F314, &id, 1);
+		mutex_unlock(&cd->cmd_lock);
 		if (ret < 0)
 			index = sprintf(rbuf, "%s: NG\n", CMD_GET_MCU_ID);
 		else
