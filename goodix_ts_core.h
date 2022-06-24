@@ -41,9 +41,6 @@
 #include <linux/notifier.h>
 #endif
 #include "touch_apis.h"
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
-#include "touch_pm.h"
-#endif
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
 #include "touch_mf_mode.h"
 #endif
@@ -668,9 +665,6 @@ struct goodix_ts_core {
 
 #if IS_ENABLED(CONFIG_FB)
 	struct notifier_block fb_notifier;
-#endif
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
-	struct touch_pm tpm;
 #endif
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
 	struct touch_mf tmf;

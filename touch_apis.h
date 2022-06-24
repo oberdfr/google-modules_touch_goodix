@@ -11,7 +11,9 @@
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
 #include "touch_mf_mode.h"
 #endif
-#include "touch_pm.h"
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+#include <goog_touch_interface.h>
+#endif
 
 enum scan_mode {
 	SCAN_MODE_AUTO = 0,
@@ -47,9 +49,9 @@ struct touch_apis_data {
 	int (*set_scan_mode)(struct device *dev, enum scan_mode mode);
 	int (*set_sensing_enabled)(struct device *dev, bool enabled);
 	bool (*get_wake_lock_state)(
-		struct device *dev, enum tpm_wakelock_type type);
+		struct device *dev, enum gti_pm_wakelock_type type);
 	int (*set_wake_lock_state)(
-		struct device *dev, enum tpm_wakelock_type type, bool locked);
+		struct device *dev, enum gti_pm_wakelock_type type, bool locked);
 };
 
 extern int touch_apis_init(struct device *dev, struct touch_apis_data *data);

@@ -264,7 +264,7 @@ int brl_suspend(struct goodix_ts_core *cd)
 int brl_resume(struct goodix_ts_core *cd)
 {
 	u32 cmd_reg = cd->ic_info.misc.cmd_addr;
-	u8 cmd_buf[] = { 0x00, 0x00, 0x05, 0xC4, 0x00, 0xC9, 0x00 };
+	u8 cmd_buf[] = { 0x00, 0x00, 0x04, 0xA7, 0xAB, 0x00 };
 	int retry = 20;
 	u8 rcv_buf[2];
 

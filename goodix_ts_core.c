@@ -35,6 +35,8 @@
 struct goodix_module goodix_modules;
 int core_module_prob_sate = CORE_MODULE_UNPROBED;
 
+static const struct dev_pm_ops dev_pm_ops;
+
 static int goodix_send_ic_config(struct goodix_ts_core *cd, int type);
 /**
  * __do_register_ext_module - register external module
@@ -826,23 +828,22 @@ int set_sensing_enabled(struct device *dev, bool enabled)
 	return 0;
 }
 
-bool get_wake_lock_state(struct device *dev, enum tpm_wakelock_type type)
+bool get_wake_lock_state(struct device *dev, enum gti_pm_wakelock_type type)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
-	return tpm_get_lock_state(&cd->tpm, type);
+	return goog_pm_wake_check_locked(cd->gti, type);
 }
 
 int set_wake_lock_state(
-	struct device *dev, enum tpm_wakelock_type type, bool locked)
+	struct device *dev, enum gti_pm_wakelock_type type, bool locked)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
 	int ret = 0;
 
-	if (locked) {
-		ret = tpm_lock_wakelock(&cd->tpm, type);
-	} else {
-		ret = tpm_unlock_wakelock(&cd->tpm, type);
-	}
+	if (locked)
+		ret = goog_pm_wake_lock(cd->gti, type, false);
+	else
+		ret = goog_pm_wake_unlock(cd->gti, type);
 	return ret;
 }
 
@@ -850,7 +851,18 @@ int set_wake_lock_state(
 static int gti_default_handler(void *private_data, enum gti_cmd_type cmd_type,
 	struct gti_union_cmd_data *cmd)
 {
-	return -ESRCH;
+	int err = 0;
+
+	switch (cmd_type) {
+	case GTI_CMD_NOTIFY_DISPLAY_STATE:
+	case GTI_CMD_NOTIFY_DISPLAY_VREFRESH:
+		err = -EOPNOTSUPP;
+		break;
+	default:
+		err = -ESRCH;
+		break;
+	}
+	return err;
 }
 
 static int get_mutual_sensor_data(
@@ -1502,9 +1514,8 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 
 	cpu_latency_qos_update_request(&core_data->pm_qos_req, 100 /* usec */);
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
-	tpm_lock_wakelock(&core_data->tpm,
-		TPM_WAKELOCK_TYPE_IRQ | TPM_WAKELOCK_TYPE_NON_WAKE_UP);
+#if IS_ENABLED(CONFIG_GTI_PM)
+	goog_pm_wake_lock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ, true);
 #endif
 
 	ts_esd->irq_status = true;
@@ -1518,9 +1529,8 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		ret = ext_module->funcs->irq_event(core_data, ext_module);
 		if (ret == EVT_CANCEL_IRQEVT) {
 			mutex_unlock(&goodix_modules.mutex);
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
-			tpm_unlock_wakelock(
-				&core_data->tpm, TPM_WAKELOCK_TYPE_IRQ);
+#if IS_ENABLED(CONFIG_GTI_PM)
+			goog_pm_wake_unlock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
 #endif
 			return IRQ_HANDLED;
 		}
@@ -1555,8 +1565,8 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		hw_ops->after_event_handler(core_data);
 	}
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
-	tpm_unlock_wakelock(&core_data->tpm, TPM_WAKELOCK_TYPE_IRQ);
+#if IS_ENABLED(CONFIG_GTI_PM)
+	goog_pm_wake_unlock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
 #endif
 
 	cpu_latency_qos_update_request(&core_data->pm_qos_req, PM_QOS_DEFAULT_VALUE);
@@ -2209,7 +2219,7 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
 
 	/* reset device or power on*/
 	if (core_data->board_data.sleep_enable)
-		hw_ops->resume(core_data);
+		hw_ops->reset(core_data, GOODIX_NORMAL_RESET_DELAY_MS);
 	else
 		goodix_ts_power_on(core_data);
 
@@ -2360,19 +2370,6 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 
 	cpu_latency_qos_add_request(&cd->pm_qos_req, PM_QOS_DEFAULT_VALUE);
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
-	cd->tpm.pdev = cd->pdev;
-#ifdef CONFIG_OF
-	cd->tpm.of_node = cd->bus->dev->of_node;
-#endif
-	cd->tpm.resume = goodix_ts_pm_resume;
-	cd->tpm.suspend = goodix_ts_pm_suspend;
-	ret = tpm_register_notification(&cd->tpm);
-	if (ret < 0) {
-		ts_info("Failed to egister touch pm");
-		goto err_init_tpm;
-	}
-#endif
 #if IS_ENABLED(CONFIG_FB)
 	cd->fb_notifier.notifier_call = goodix_ts_fb_notifier_callback;
 	if (fb_register_client(&cd->fb_notifier))
@@ -2429,6 +2426,14 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 
 	cd->gti = goog_touch_interface_probe(
 		cd, cd->bus->dev, cd->input_dev, gti_default_handler, options);
+
+#if IS_ENABLED(CONFIG_GTI_PM)
+	ret = goog_pm_register_notification(cd->gti, &dev_pm_ops);
+	if (ret < 0) {
+		ts_info("Failed to egister gti pm");
+		goto err_init_tpm;
+	}
+#endif
 #endif
 
 	/* create procfs files */
@@ -2486,16 +2491,16 @@ err_init_gesture:
 err_init_esd:
 	goodix_ts_procfs_exit(cd);
 err_init_procfs:
+#if IS_ENABLED(CONFIG_GTI_PM)
+	goog_pm_unregister_notification(cd->gti);
+err_init_tpm:
+#endif
 	touch_apis_deinit(&cd->pdev->dev);
 err_init_apis:
 	goodix_ts_sysfs_exit(cd);
 err_init_sysfs:
 #if IS_ENABLED(CONFIG_FB)
 	fb_unregister_client(&cd->fb_notifier);
-#endif
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
-	tpm_unregister_notification(&cd->tpm);
-err_init_tpm:
 #endif
 	cpu_latency_qos_remove_request(&cd->pm_qos_req);
 	goodix_ts_pen_dev_remove(cd);
@@ -2693,6 +2698,7 @@ static int goodix_ts_probe(struct platform_device *pdev)
 	core_data->pdev = pdev;
 	core_data->bus = bus_interface;
 	platform_set_drvdata(pdev, core_data);
+	dev_set_drvdata(bus_interface->dev, core_data);
 
 	ret = goodix_pinctrl_init(core_data);
 	if (ret) {
@@ -2782,9 +2788,6 @@ static int goodix_ts_remove(struct platform_device *pdev)
 		gesture_module_exit();
 		inspect_module_exit();
 		hw_ops->irq_enable(core_data, false);
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
-		tpm_unregister_notification(&core_data->tpm);
-#endif
 #if IS_ENABLED(CONFIG_FB)
 		fb_unregister_client(&core_data->fb_notifier);
 #endif
@@ -2797,6 +2800,9 @@ static int goodix_ts_remove(struct platform_device *pdev)
 		goodix_ts_pen_dev_remove(core_data);
 		goodix_ts_sysfs_exit(core_data);
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+#if IS_ENABLED(CONFIG_GTI_PM)
+		goog_pm_unregister_notification(core_data->gti);
+#endif
 		goog_touch_interface_remove(core_data->gti);
 #endif
 		touch_apis_deinit(&core_data->pdev->dev);
@@ -2809,11 +2815,8 @@ static int goodix_ts_remove(struct platform_device *pdev)
 
 #if IS_ENABLED(CONFIG_PM)
 static const struct dev_pm_ops dev_pm_ops = {
-#if !IS_ENABLED(CONFIG_FB) && !IS_ENABLED(CONFIG_HAS_EARLYSUSPEND) &&          \
-	!IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
 	.suspend = goodix_ts_pm_suspend,
 	.resume = goodix_ts_pm_resume,
-#endif
 };
 #endif
 
@@ -2827,7 +2830,10 @@ static struct platform_driver goodix_ts_driver = {
 		.name = GOODIX_CORE_DRIVER_NAME,
 		.owner = THIS_MODULE,
 #if IS_ENABLED(CONFIG_PM)
+#if !IS_ENABLED(CONFIG_FB) && !IS_ENABLED(CONFIG_HAS_EARLYSUSPEND) &&          \
+	!IS_ENABLED(CONFIG_GTI_PM)
 		.pm = &dev_pm_ops,
+#endif
 #endif
 	},
 	.probe = goodix_ts_probe,

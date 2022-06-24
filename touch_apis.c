@@ -301,7 +301,7 @@ static ssize_t wake_lock_show(
 
 	if (apis->get_wake_lock_state != NULL) {
 		locked = apis->get_wake_lock_state(
-			dev, TPM_WAKELOCK_TYPE_FORCE_ACTIVE);
+			dev, GTI_PM_WAKELOCK_TYPE_FORCE_ACTIVE);
 		ret = snprintf(buf, PAGE_SIZE, "result: %s\n",
 			locked ? "locked" : "unlocked");
 	} else {
@@ -329,7 +329,7 @@ static ssize_t wake_lock_store(struct device *dev,
 
 	if (apis->set_wake_lock_state != NULL) {
 		ret = apis->set_wake_lock_state(
-			dev, TPM_WAKELOCK_TYPE_FORCE_ACTIVE, locked);
+			dev, GTI_PM_WAKELOCK_TYPE_FORCE_ACTIVE, locked);
 		if (ret < 0) {
 			return ret;
 		}
