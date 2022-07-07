@@ -2379,12 +2379,12 @@ static void goodix_set_custom_mode(u8 type, u8 val)
 
 	if (type == PALM_FUNC) {
 		index = sprintf(&rbuf[index], "set palm %s\n",
-			val ? "disabled" : "restore");
+			val ? "enabled" : "disabled");
 	} else if (type == NOISE_FUNC) {
 		if (val == 0) {
-			index = sprintf(&rbuf[index], "set noise restore\n");
-		} else if (val == 1) {
 			index = sprintf(&rbuf[index], "set noise disabled\n");
+		} else if (val == 1) {
+			index = sprintf(&rbuf[index], "set noise enabled\n");
 		} else if (val == 2) {
 			index = sprintf(&rbuf[index], "set noise lv0\n");
 		} else {
@@ -2392,10 +2392,10 @@ static void goodix_set_custom_mode(u8 type, u8 val)
 		}
 	} else if (type == WATER_FUNC) {
 		index = sprintf(&rbuf[index], "set water %s\n",
-			val ? "disabled" : "restore");
+			val ? "enabled" : "disabled");
 	} else if (type == GRIP_FUNC) {
 		index = sprintf(&rbuf[index], "set grip %s\n",
-			val ? "disabled" : "restore");
+			val ? "enabled" : "disabled");
 	} else {
 		ts_err("invalid type, %d", type);
 		return;

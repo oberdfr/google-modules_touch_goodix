@@ -1265,15 +1265,11 @@ static int brl_after_event_handler(struct goodix_ts_core *cd)
 	struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
 	struct goodix_ic_info_misc *misc = &cd->ic_info.misc;
 	u8 sync_clean[1] = { 0 };
-	int ret = 0;
 
 	if (cd->tools_ctrl_sync)
 		return 0;
 
-	ret = hw_ops->write(cd, misc->touch_data_addr, sync_clean, sizeof(sync_clean));
-	if (ret != 0)
-		return ret;
-	return hw_ops->write(cd, misc->frame_data_addr, sync_clean, sizeof(sync_clean));
+	return hw_ops->write(cd, misc->touch_data_addr, sync_clean, sizeof(sync_clean));
 }
 
 static int brld_get_framedata(
@@ -1561,7 +1557,7 @@ int brl_set_palm_enabled(struct goodix_ts_core *cd, bool enabled)
 	cmd.cmd = GOODIX_CMD_SET_CUSTOM_MODE;
 	cmd.len = 6;
 	cmd.data[0] = CUSTOM_MODE_PALM;
-	cmd.data[1] = enabled ? 0 : 1;
+	cmd.data[1] = enabled ? 1 : 0;
 	if (cd->hw_ops->send_cmd(cd, &cmd))
 		ts_err("failed to %s palm mode",
 			enabled ? "enable" : "disable");
@@ -1580,7 +1576,7 @@ int brl_get_palm_enabled(struct goodix_ts_core *cd, bool *enabled)
 		*enabled = false;
 		return ret;
 	}
-	*enabled = (val & CUSTOM_MODE_MASK_PALM) == 0;
+	*enabled = (val & CUSTOM_MODE_MASK_PALM) != 0;
 	return ret;
 }
 
