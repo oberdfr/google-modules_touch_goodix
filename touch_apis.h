@@ -15,7 +15,7 @@
 #include <goog_touch_interface.h>
 #endif
 
-enum scan_mode {
+enum scan_mode : u8 {
 	SCAN_MODE_AUTO = 0,
 	SCAN_MODE_NORMAL_ACTIVE,
 	SCAN_MODE_NORMAL_IDLE,

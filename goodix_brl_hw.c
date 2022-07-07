@@ -1252,8 +1252,9 @@ static int brl_event_handler(
 		ts_event->event_type = EVENT_GESTURE;
 		if (event_data->status_changed)
 			ts_event->event_type |= EVENT_STATUS;
-		ts_event->gesture_type = gesture->gesture_type;
-		memcpy(ts_event->gesture_data, gesture->data,
+		ts_event->gesture_data.gesture_type = gesture->gesture_type;
+		ts_event->gesture_data.touches = gesture->touches;
+		memcpy(ts_event->gesture_data.data, gesture->data,
 			GOODIX_GESTURE_DATA_LEN);
 	}
 
@@ -1486,8 +1487,22 @@ exit:
 	return ret;
 }
 
+#define GOODIX_GET_SCAN_MODE_ADDR 0x10219
+int brl_get_scan_mode(struct goodix_ts_core *cd, enum raw_scan_mode* mode)
+{
+	int ret = 0;
+
+	ret = cd->hw_ops->read(cd, GOODIX_GET_SCAN_MODE_ADDR, mode, 1);
+	if (ret != 0) {
+		ts_err("failed to get scan mode, ret: %d", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
 #define GOODIX_CMD_SET_SCAN_MODE 0x9F
-int brl_set_scan_mode(struct goodix_ts_core *cd, int mode)
+int brl_set_scan_mode(struct goodix_ts_core *cd, enum raw_scan_mode mode)
 {
 	struct goodix_ts_cmd cmd;
 
@@ -1653,6 +1668,7 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 	.after_event_handler = brl_after_event_handler,
 	.get_capacitance_data = brl_get_capacitance_data,
 	.ping = brl_dev_confirm,
+	.get_scan_mode = brl_get_scan_mode,
 	.set_scan_mode = brl_set_scan_mode,
 	.set_continuously_report_enabled = brl_set_continuously_report_enabled,
 	.set_heatmap_enabled = brl_set_heatmap_enabled,

@@ -68,6 +68,12 @@
 #define GOODIX_RETRY_5 5
 #define GOODIX_RETRY_10 10
 
+#define GOODIX_GESTURE_UNKNOWN 0x00
+#define GOODIX_GESTURE_DOUBLE_TAP 0xCC
+#define GOODIX_GESTURE_SINGLE_TAP 0x4C
+#define GOODIX_GESTURE_FOD_DOWN 0x46
+#define GOODIX_GESTURE_FOD_UP 0x55
+
 #define TS_DEFAULT_FIRMWARE "goodix_firmware.bin"
 #define TS_DEFAULT_CFG_BIN "goodix_cfg_group.bin"
 
@@ -136,6 +142,15 @@ enum CHECKSUM_MODE {
 enum PINCTRL_MODE {
 	PINCTRL_MODE_ACTIVE,
 	PINCTRL_MODE_SUSPEND,
+};
+
+enum raw_scan_mode : u8 {
+	RAW_SCAN_MODE_AUTO = 0,
+	RAW_SCAN_MODE_NORMAL_ACTIVE,
+	RAW_SCAN_MODE_NORMAL_IDLE,
+	RAW_SCAN_MODE_LOW_POWER_ACTIVE,
+	RAW_SCAN_MODE_LOW_POWER_IDLE,
+	RAW_SCAN_MODE_SLEEP,
 };
 
 #define MAX_SCAN_FREQ_NUM 8
@@ -315,6 +330,8 @@ struct goodix_ts_board_data {
 	unsigned int panel_max_y;
 	unsigned int panel_max_w; /*major and minor*/
 	unsigned int panel_max_p; /*pressure*/
+	unsigned int udfps_x;
+	unsigned int udfps_y;
 
 	bool pen_enable;
 	bool sleep_enable;
@@ -424,6 +441,13 @@ struct goodix_touch_data {
 	struct goodix_ts_coords coords[GOODIX_MAX_TOUCH];
 };
 
+/* gesture event data */
+struct goodix_gesture_data {
+	u8 gesture_type;
+	int touches;
+	u8 data[GOODIX_GESTURE_DATA_LEN];
+};
+
 struct goodix_ts_key {
 	int status;
 	int code;
@@ -444,8 +468,7 @@ struct goodix_ts_event {
 	enum ts_event_type event_type;
 	u8 fp_flag;	 /* finger print DOWN flag */
 	u8 request_code; /* represent the request type */
-	u8 gesture_type;
-	u8 gesture_data[GOODIX_GESTURE_DATA_LEN];
+	struct goodix_gesture_data gesture_data;
 	struct goodix_touch_data touch_data;
 	struct goodix_pen_data pen_data;
 	struct goodix_status_data status_data;
@@ -509,7 +532,7 @@ struct goodix_ts_gesture_event_data {
 	u8 gesture_type;
 	u8 reserved4;
 	u16 checksum;
-	u8 data[0];
+	u8 data[GOODIX_GESTURE_DATA_LEN];
 };
 
 struct goodix_mutual_data {
@@ -584,7 +607,8 @@ struct goodix_ts_hw_ops {
 	int (*get_capacitance_data)(
 		struct goodix_ts_core *cd, struct ts_rawdata_info *info);
 	int (*ping)(struct goodix_ts_core *cd);
-	int (*set_scan_mode)(struct goodix_ts_core *cd, int mdoe);
+	int (*get_scan_mode)(struct goodix_ts_core *cd, enum raw_scan_mode* mode);
+	int (*set_scan_mode)(struct goodix_ts_core *cd, enum raw_scan_mode mode);
 	int (*set_continuously_report_enabled)(
 		struct goodix_ts_core *cd, bool enabled);
 	int (*set_heatmap_enabled)(struct goodix_ts_core *cd, bool enabled);
@@ -639,6 +663,10 @@ struct goodix_ts_core {
 	struct mutex cmd_lock;
 	/* TODO counld we remove this from core data? */
 	struct goodix_ts_event ts_event;
+	struct workqueue_struct *event_wq;
+	struct delayed_work monitor_gesture_work;
+	ktime_t gesture_down_timeout;
+	ktime_t gesture_up_timeout;
 
 	/* every pointer of this array represent a kind of config */
 	struct goodix_ic_config *ic_configs[GOODIX_MAX_CONFIG_GROUP];
@@ -845,6 +873,7 @@ void goodix_tools_exit(void);
 int driver_test_proc_init(struct goodix_ts_core *core_data);
 void driver_test_proc_remove(void);
 int goodix_do_inspect(struct goodix_ts_core *cd, struct ts_rawdata_info *info);
-void goodix_ts_report_status(struct goodix_ts_event *ts_event);
+void goodix_ts_report_status(struct goodix_ts_core *core_data,
+	struct goodix_ts_event *ts_event);
 
 #endif
