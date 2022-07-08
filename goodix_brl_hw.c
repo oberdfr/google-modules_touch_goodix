@@ -1530,16 +1530,6 @@ int brl_set_heatmap_enabled(struct goodix_ts_core *cd, bool enabled)
 			enabled ? "enabled" : "disabled", ret);
 		return ret;
 	}
-
-	cmd.cmd = GOODIX_CMD_SET_FRAMEDATA_ENABLED;
-	cmd.len = 5;
-	cmd.data[0] = enabled ? 0x82 : 0;
-	ret = cd->hw_ops->send_cmd(cd, &cmd);
-	if (ret != 0) {
-		ts_err("failed to set framedata %s, err: %d",
-			enabled ? "enabled" : "disabled", ret);
-		return ret;
-	}
 	return ret;
 }
 

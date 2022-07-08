@@ -2590,17 +2590,11 @@ static void goodix_set_heatmap(int val)
 		temp_cmd.len = 5;
 		temp_cmd.cmd = 0xC9;
 		temp_cmd.data[0] = 0;
-		cd->hw_ops->send_cmd(cd, &temp_cmd);
-		temp_cmd.cmd = 0x90;
-		temp_cmd.data[0] = 0;
 	} else {
 		index = sprintf(rbuf, "enable heatmap\n");
 		temp_cmd.len = 5;
 		temp_cmd.cmd = 0xC9;
 		temp_cmd.data[0] = 1;
-		cd->hw_ops->send_cmd(cd, &temp_cmd);
-		temp_cmd.cmd = 0x90;
-		temp_cmd.data[0] = 0x82;
 	}
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 	cd->hw_ops->irq_enable(cd, true);
