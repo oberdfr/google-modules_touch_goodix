@@ -1361,8 +1361,6 @@ static void goodix_ts_report_finger(
 				touch_data->coords[i].x);
 			input_report_abs(dev, ABS_MT_POSITION_Y,
 				touch_data->coords[i].y);
-			input_report_abs(dev, ABS_MT_WIDTH_MAJOR,
-				touch_data->coords[i].w);
 			input_report_abs(
 				dev, ABS_MT_PRESSURE, touch_data->coords[i].p);
 			input_report_abs(dev, ABS_MT_TOUCH_MAJOR,
@@ -1411,8 +1409,6 @@ static void goodix_ts_report_finger_goog(
 				gti, dev, ABS_MT_POSITION_X, coord->x);
 			goog_input_report_abs(
 				gti, dev, ABS_MT_POSITION_Y, coord->y);
-			goog_input_report_abs(
-				gti, dev, ABS_MT_WIDTH_MAJOR, coord->w);
 			goog_input_report_abs(
 				gti, dev, ABS_MT_PRESSURE, coord->p);
 			goog_input_report_abs(
@@ -1813,7 +1809,6 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 		input_dev, ABS_MT_POSITION_X, 0, ts_bdata->panel_max_x, 0, 0);
 	input_set_abs_params(
 		input_dev, ABS_MT_POSITION_Y, 0, ts_bdata->panel_max_y, 0, 0);
-	input_set_abs_params(input_dev, ABS_MT_WIDTH_MAJOR, 0, 255, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_PRESSURE, 0, 255, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR, 0, 4096, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_TOUCH_MINOR, 0, 4096, 0, 0);
