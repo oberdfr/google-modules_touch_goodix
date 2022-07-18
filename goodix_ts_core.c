@@ -1368,7 +1368,7 @@ static void goodix_ts_report_finger(
 			input_report_abs(dev, ABS_MT_TOUCH_MINOR,
 				touch_data->coords[i].minor);
 			input_report_abs(dev, ABS_MT_ORIENTATION,
-				touch_data->coords[i].angle);
+				(touch_data->coords[i].angle * 2048) / 45);
 		} else {
 			input_mt_slot(dev, i);
 			input_mt_report_slot_state(dev, MT_TOOL_FINGER, false);
@@ -1416,7 +1416,7 @@ static void goodix_ts_report_finger_goog(
 			goog_input_report_abs(
 				gti, dev, ABS_MT_TOUCH_MINOR, coord->minor);
 			goog_input_report_abs(
-				gti, dev, ABS_MT_ORIENTATION, coord->angle);
+				gti, dev, ABS_MT_ORIENTATION, (coord->angle * 2048) / 45);
 		} else {
 			goog_input_mt_slot(gti, dev, i);
 			goog_input_mt_report_slot_state(
@@ -1812,7 +1812,7 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 	input_set_abs_params(input_dev, ABS_MT_PRESSURE, 0, 255, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR, 0, 4096, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_TOUCH_MINOR, 0, 4096, 0, 0);
-	input_set_abs_params(input_dev, ABS_MT_ORIENTATION, -90, 90, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_ORIENTATION, -4096, 4096, 0, 0);
 #ifdef INPUT_TYPE_B_PROTOCOL
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 7, 0)
 	input_mt_init_slots(input_dev, GOODIX_MAX_TOUCH, INPUT_MT_DIRECT);
