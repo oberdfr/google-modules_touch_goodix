@@ -309,6 +309,7 @@ struct goodix_module {
  * @irq_flag: irq trigger type
  * @swap_axis: whether swaw x y axis
  * @panel_max_x/y/w/p: resolution and size
+ * @panel_height_mm: the height of display in mm
  * @pannel_key_map: key map
  * @fw_name: name of the firmware image
  */
@@ -330,6 +331,7 @@ struct goodix_ts_board_data {
 	unsigned int panel_max_y;
 	unsigned int panel_max_w; /*major and minor*/
 	unsigned int panel_max_p; /*pressure*/
+	unsigned int panel_height_mm;
 	unsigned int udfps_x;
 	unsigned int udfps_y;
 

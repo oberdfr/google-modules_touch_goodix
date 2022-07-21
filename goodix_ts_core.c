@@ -1162,6 +1162,14 @@ static int goodix_parse_dt_resolution(
 		ts_err("failed get panel-max-p, use default");
 		board_data->panel_max_p = GOODIX_PEN_MAX_PRESSURE;
 	}
+
+	ret = of_property_read_u32(
+		node, "goodix,panel-height-mm", &board_data->panel_height_mm);
+	if (ret) {
+		ts_err("failed get panel-height-mm");
+		return ret;
+	}
+
 	return 0;
 }
 
@@ -1359,6 +1367,8 @@ static void goodix_ts_report_finger(
 	struct input_dev *dev = cd->input_dev;
 	unsigned int touch_num = touch_data->touch_num;
 	int i;
+	int panel_height_mm = cd->board_data.panel_height_mm;
+	int panel_height_pixel = cd->board_data.panel_max_y + 1;
 
 	mutex_lock(&dev->mutex);
 
@@ -1382,9 +1392,11 @@ static void goodix_ts_report_finger(
 			input_report_abs(
 				dev, ABS_MT_PRESSURE, touch_data->coords[i].p);
 			input_report_abs(dev, ABS_MT_TOUCH_MAJOR,
-				touch_data->coords[i].major);
+				(touch_data->coords[i].major * panel_height_pixel) /
+				(10 * panel_height_mm));
 			input_report_abs(dev, ABS_MT_TOUCH_MINOR,
-				touch_data->coords[i].minor);
+				(touch_data->coords[i].minor * panel_height_pixel) /
+				(10 * panel_height_mm));
 			input_report_abs(dev, ABS_MT_ORIENTATION,
 				(touch_data->coords[i].angle * 2048) / 45);
 		} else {
@@ -1413,6 +1425,8 @@ static void goodix_ts_report_finger_goog(
 	struct goog_touch_interface *gti = cd->gti;
 	unsigned int touch_num = touch_data->touch_num;
 	int i;
+	int panel_height_mm = cd->board_data.panel_height_mm;
+	int panel_height_pixel = cd->board_data.panel_max_y + 1;
 
 	goog_input_lock(gti);
 
@@ -1429,10 +1443,12 @@ static void goodix_ts_report_finger_goog(
 				gti, dev, ABS_MT_POSITION_Y, coord->y);
 			goog_input_report_abs(
 				gti, dev, ABS_MT_PRESSURE, coord->p);
-			goog_input_report_abs(
-				gti, dev, ABS_MT_TOUCH_MAJOR, coord->major);
-			goog_input_report_abs(
-				gti, dev, ABS_MT_TOUCH_MINOR, coord->minor);
+			goog_input_report_abs(gti, dev, ABS_MT_TOUCH_MAJOR,
+				(touch_data->coords[i].major * panel_height_pixel) /
+				(10 * panel_height_mm));
+			goog_input_report_abs(gti, dev, ABS_MT_TOUCH_MINOR,
+				(touch_data->coords[i].minor * panel_height_pixel) /
+				(10 * panel_height_mm));
 			goog_input_report_abs(
 				gti, dev, ABS_MT_ORIENTATION, (coord->angle * 2048) / 45);
 		} else {
@@ -1899,8 +1915,8 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 	input_set_abs_params(
 		input_dev, ABS_MT_POSITION_Y, 0, ts_bdata->panel_max_y, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_PRESSURE, 0, 255, 0, 0);
-	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR, 0, 4096, 0, 0);
-	input_set_abs_params(input_dev, ABS_MT_TOUCH_MINOR, 0, 4096, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR, 0, ts_bdata->panel_max_y, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_TOUCH_MINOR, 0, ts_bdata->panel_max_x, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_ORIENTATION, -4096, 4096, 0, 0);
 	input_set_abs_params(
 		input_dev, ABS_MT_TOOL_TYPE, MT_TOOL_FINGER, MT_TOOL_PALM, 0, 0);
