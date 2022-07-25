@@ -50,7 +50,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.0.12"
+#define GOODIX_DRIVER_VERSION "v1.0.13"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -402,6 +402,7 @@ enum ts_event_type {
 enum ts_request_type {
 	REQUEST_TYPE_CONFIG = 1,
 	REQUEST_TYPE_RESET = 3,
+	REQUEST_TYPE_UPDATE = 5
 };
 
 /* notifier event */

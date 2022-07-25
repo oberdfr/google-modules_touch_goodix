@@ -72,7 +72,7 @@ struct goodix_tools_dev {
 	struct mutex mutex;
 	atomic_t in_use;
 	struct goodix_ext_module module;
-} * goodix_tools_dev;
+} *goodix_tools_dev;
 
 /* read data asynchronous,
  * success return data length, otherwise return < 0

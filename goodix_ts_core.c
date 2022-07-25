@@ -1524,6 +1524,10 @@ static int goodix_ts_request_handle(
 		ret = goodix_send_ic_config(cd, CONFIG_TYPE_NORMAL);
 	else if (ts_event->request_code == REQUEST_TYPE_RESET)
 		ret = hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+	else if (ts_event->request_code == REQUEST_TYPE_UPDATE)
+		ret = goodix_do_fw_update(
+			NULL, UPDATE_MODE_FORCE | UPDATE_MODE_BLOCK |
+				      UPDATE_MODE_SRC_REQUEST);
 	else
 		ts_info("can not handle request type 0x%x",
 			ts_event->request_code);
