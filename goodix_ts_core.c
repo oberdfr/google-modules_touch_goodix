@@ -2332,12 +2332,14 @@ static void monitor_gesture_event(struct work_struct *work)
 				msecs_to_jiffies(5));
 			return;
 		}
+		cd->coords_timestamp = ktime_get();
 	} else if (gesture_data->gesture_type == GOODIX_GESTURE_FOD_DOWN) {
 		if (ktime_get() < cd->gesture_up_timeout) {
 			queue_delayed_work(cd->event_wq, &cd->monitor_gesture_work,
 				msecs_to_jiffies(5));
 			return;
 		}
+		cd->coords_timestamp = ktime_get();
 	}
 
 	goodix_ts_report_gesture_up(cd);
