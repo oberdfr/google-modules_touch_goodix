@@ -976,6 +976,29 @@ static int set_heatmap_enabled(
 	return cd->hw_ops->set_heatmap_enabled(cd, cmd->setting == GTI_HEATMAP_ENABLE);
 }
 
+static int gti_get_fw_version(void *private_data,
+	struct gti_fw_version_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	int ret = 0;
+
+	ret = cd->hw_ops->read_version(cd, &cd->fw_version);
+	if (ret) {
+		return ret;
+	}
+
+	snprintf(cmd->buffer, sizeof(cmd->buffer), "%02x.%02x.%02x.%02x",
+		cd->fw_version.patch_vid[0], cd->fw_version.patch_vid[1],
+		cd->fw_version.patch_vid[2], cd->fw_version.patch_vid[3]);
+	return ret;
+}
+
+static int gti_ping(void *private_data, struct gti_ping_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return cd->hw_ops->ping(cd);
+}
+
 #endif
 
 /* prosfs create */
@@ -2589,6 +2612,8 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	options->set_screen_protector_mode = set_screen_protector_mode;
 	options->get_screen_protector_mode = get_screen_protector_mode;
 	options->set_heatmap_enabled = set_heatmap_enabled;
+	options->get_fw_version = gti_get_fw_version;
+	options->ping = gti_ping;
 
 	cd->gti = goog_touch_interface_probe(
 		cd, cd->bus->dev, cd->input_dev, gti_default_handler, options);
