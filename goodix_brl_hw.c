@@ -1651,6 +1651,136 @@ int brl_get_screen_protector_mode_enabled(
 	return ret;
 }
 
+int brl_get_mutual_data(struct goodix_ts_core *cd, enum frame_data_type type)
+{
+	int ret = 0;
+	u8 val;
+	int tx = cd->ic_info.parm.drv_num;
+	int rx = cd->ic_info.parm.sen_num;
+	u32 mutual_addr;
+	u32 flag_addr = cd->ic_info.misc.frame_data_addr;
+	int retry = 20;
+	struct goodix_ts_cmd cmd = { 0 };
+
+	mutual_addr = cd->ic_info.misc.frame_data_addr +
+		      cd->ic_info.misc.frame_data_head_len +
+		      cd->ic_info.misc.fw_attr_len +
+		      cd->ic_info.misc.fw_log_len + 8;
+
+	cmd.cmd = GOODIX_CMD_SET_FRAMEDATA_ENABLED;
+	cmd.len = 5;
+	cmd.data[0] = type;
+	ret = cd->hw_ops->send_cmd(cd, &cmd);
+	if (ret < 0) {
+		ts_err("report rawdata failed, exit!");
+		goto exit;
+	}
+
+	/* clean touch event flag */
+	val = 0;
+	ret = cd->hw_ops->write(cd, flag_addr, &val, 1);
+	if (ret < 0) {
+		ts_err("clean touch event failed, exit!");
+		goto exit;
+	}
+
+	while (retry--) {
+		usleep_range(2000, 2100);
+		ret = cd->hw_ops->read(cd, flag_addr, &val, 1);
+		if (!ret && (val & 0x80))
+			break;
+	}
+	if (retry < 0) {
+		ts_err("framedata is not ready val:0x%02x, exit!", val);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	ret = cd->hw_ops->read(cd, mutual_addr, (u8*)cd->mutual_data, tx * rx * 2);
+	if (ret < 0) {
+		ts_err("read frame data failed");
+		goto exit;
+	}
+
+	goodix_rotate_abcd2cbad(tx, rx, (s16 *)cd->mutual_data,
+		(s16 *)cd->mutual_data_manual);
+
+exit:
+	cmd.cmd = GOODIX_CMD_SET_FRAMEDATA_ENABLED;
+	cmd.data[0] = 0;
+	cmd.len = 5;
+	if (ret == 0) {
+		ret = cd->hw_ops->send_cmd(cd, &cmd);
+	} else {
+		cd->hw_ops->send_cmd(cd, &cmd);
+	}
+	return ret;
+}
+
+int brl_get_self_sensing_data(struct goodix_ts_core *cd, enum frame_data_type type)
+{
+	int ret = 0;
+	u8 val;
+	int tx = cd->ic_info.parm.drv_num;
+	int rx = cd->ic_info.parm.sen_num;
+	u32 self_addr;
+	u32 flag_addr = cd->ic_info.misc.frame_data_addr;
+	int retry = 20;
+	struct goodix_ts_cmd cmd = { 0 };
+
+	self_addr = cd->ic_info.misc.frame_data_addr +
+		    cd->ic_info.misc.frame_data_head_len +
+		    cd->ic_info.misc.fw_attr_len + cd->ic_info.misc.fw_log_len +
+		    cd->ic_info.misc.mutual_struct_len + 10;
+
+	cmd.cmd = GOODIX_CMD_SET_FRAMEDATA_ENABLED;
+	cmd.len = 5;
+	cmd.data[0] = type;
+	ret = cd->hw_ops->send_cmd(cd, &cmd);
+	if (ret < 0) {
+		ts_err("report rawdata failed, exit!");
+		goto exit;
+	}
+
+	/* clean touch event flag */
+	val = 0;
+	ret = cd->hw_ops->write(cd, flag_addr, &val, 1);
+	if (ret < 0) {
+		ts_err("clean touch event failed, exit!");
+		goto exit;
+	}
+
+	while (retry--) {
+		usleep_range(2000, 2100);
+		ret = cd->hw_ops->read(cd, flag_addr, &val, 1);
+		if (!ret && (val & 0x80))
+			break;
+	}
+	if (retry < 0) {
+		ts_err("framedata is not ready val:0x%02x, exit!", val);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	ret = cd->hw_ops->read(cd, self_addr, (u8*)cd->self_sensing_data_manual,
+		(tx + rx) * 2);
+	if (ret < 0) {
+		ts_err("read frame data failed");
+		goto exit;
+	}
+
+exit:
+	cmd.cmd = GOODIX_CMD_SET_FRAMEDATA_ENABLED;
+	cmd.data[0] = 0;
+	cmd.len = 5;
+	if (ret == 0) {
+		ret = cd->hw_ops->send_cmd(cd, &cmd);
+	} else {
+		cd->hw_ops->send_cmd(cd, &cmd);
+	}
+	return ret;
+}
+
 static struct goodix_ts_hw_ops brl_hw_ops = {
 	.power_on = brl_power_on,
 	.resume = brl_resume,
@@ -1683,6 +1813,8 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 		brl_set_screen_protector_mode_enabled,
 	.get_screen_protector_mode_enabled =
 		brl_get_screen_protector_mode_enabled,
+	.get_mutual_data = brl_get_mutual_data,
+	.get_self_sensing_data = brl_get_self_sensing_data,
 };
 
 struct goodix_ts_hw_ops *goodix_get_hw_ops(void)

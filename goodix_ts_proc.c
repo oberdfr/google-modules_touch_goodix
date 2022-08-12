@@ -3339,6 +3339,38 @@ static const struct file_operations cmd_list_ops = {
 };
 #endif
 
+int driver_test_selftest(char* buf)
+{
+	int ret = 0;
+
+	release_test_resource();
+	index = 0;
+	if (rbuf != NULL) {
+		kfree(rbuf);
+		rbuf = NULL;
+	}
+
+	raw_data_cnt = 16;
+	noise_data_cnt = 1;
+	rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+	ret = malloc_test_resource();
+	if (ret < 0) {
+		ts_err("malloc test resource failed");
+		goto exit;
+	}
+	ts_test->item[GTP_CAP_TEST] = true;
+	ts_test->item[GTP_NOISE_TEST] = true;
+	ts_test->item[GTP_DELTA_TEST] = true;
+	ts_test->item[GTP_SELFCAP_TEST] = true;
+	ts_test->item[GTP_SHORT_TEST] = true;
+	goodix_auto_test(true);
+
+	strlcpy(buf, rbuf, PAGE_SIZE);
+
+exit:
+	return ret;
+}
+
 int driver_test_proc_init(struct goodix_ts_core *core_data)
 {
 	struct proc_dir_entry *proc_entry;

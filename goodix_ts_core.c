@@ -871,10 +871,35 @@ static int get_mutual_sensor_data(
 	struct goodix_ts_core *cd = private_data;
 	int tx = cd->ic_info.parm.drv_num;
 	int rx = cd->ic_info.parm.sen_num;
+	int ret = 0;
 
-	cmd->buffer = (u8 *)cd->mutual_data;
-	cmd->size = tx * rx * sizeof(uint16_t);
-	return 0;
+	if (cmd->type == GTI_SENSOR_DATA_TYPE_MS) {
+		cmd->buffer = (u8 *)cd->mutual_data;
+		cmd->size = tx * rx * sizeof(uint16_t);
+	} else {
+		/* disable irq & close esd */
+		cd->hw_ops->irq_enable(cd, false);
+		goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
+
+		ret = -EINVAL;
+		if (cmd->type == GTI_SENSOR_DATA_TYPE_MS_DIFF) {
+			ret = cd->hw_ops->get_mutual_data(cd, FRAME_DATA_TYPE_DIFF);
+		} else if (cmd->type == GTI_SENSOR_DATA_TYPE_MS_RAW) {
+			ret = cd->hw_ops->get_mutual_data(cd, FRAME_DATA_TYPE_RAW);
+		} else if (cmd->type == GTI_SENSOR_DATA_TYPE_MS_BASELINE) {
+			ret = cd->hw_ops->get_mutual_data(cd, FRAME_DATA_TYPE_BASE);
+		}
+
+		if (ret == 0) {
+			cmd->buffer = (u8 *)cd->mutual_data_manual;
+			cmd->size = tx * rx * sizeof(uint16_t);
+		}
+
+		/* enable irq & esd */
+		cd->hw_ops->irq_enable(cd, true);
+		goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
+	}
+	return ret;
 }
 
 static int get_self_sensor_data(
@@ -883,10 +908,35 @@ static int get_self_sensor_data(
 	struct goodix_ts_core *cd = private_data;
 	int tx = cd->ic_info.parm.drv_num;
 	int rx = cd->ic_info.parm.sen_num;
+	int ret = 0;
 
-	cmd->buffer = (u8 *)cd->self_sensing_data;
-	cmd->size = (tx + rx) * sizeof(uint16_t);
-	return 0;
+	if (cmd->type == GTI_SENSOR_DATA_TYPE_SS) {
+		cmd->buffer = (u8 *)cd->self_sensing_data;
+		cmd->size = (tx + rx) * sizeof(uint16_t);
+	} else {
+		/* disable irq & close esd */
+		cd->hw_ops->irq_enable(cd, false);
+		goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
+
+		ret = -EINVAL;
+		if (cmd->type == GTI_SENSOR_DATA_TYPE_SS_DIFF) {
+			ret = cd->hw_ops->get_self_sensing_data(cd, FRAME_DATA_TYPE_DIFF);
+		} else if (cmd->type == GTI_SENSOR_DATA_TYPE_SS_RAW) {
+			ret = cd->hw_ops->get_self_sensing_data(cd, FRAME_DATA_TYPE_RAW);
+		} else if (cmd->type == GTI_SENSOR_DATA_TYPE_SS_BASELINE) {
+			ret = cd->hw_ops->get_self_sensing_data(cd, FRAME_DATA_TYPE_BASE);
+		}
+
+		if (ret == 0) {
+			cmd->buffer = (u8 *)cd->self_sensing_data_manual;
+			cmd->size = tx * rx * sizeof(uint16_t);
+		}
+
+		/* enable irq & esd */
+		cd->hw_ops->irq_enable(cd, true);
+		goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
+	}
+	return ret;
 }
 
 static int set_continuous_report(
@@ -997,6 +1047,12 @@ static int gti_ping(void *private_data, struct gti_ping_cmd *cmd)
 {
 	struct goodix_ts_core *cd = private_data;
 	return cd->hw_ops->ping(cd);
+}
+
+static int git_selftest(void *private_data, struct gti_selftest_cmd *cmd)
+{
+	cmd->result = GTI_SELFTEST_RESULT_DONE;
+	return driver_test_selftest(cmd->buffer);
 }
 
 #endif
@@ -2616,6 +2672,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	options->set_heatmap_enabled = set_heatmap_enabled;
 	options->get_fw_version = gti_get_fw_version;
 	options->ping = gti_ping;
+	options->selftest = git_selftest;
 
 	cd->gti = goog_touch_interface_probe(
 		cd, cd->bus->dev, cd->input_dev, gti_default_handler, options);
@@ -2663,7 +2720,11 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	cd->touch_frame_package =
 		devm_kzalloc(&cd->pdev->dev, touch_frame_size + 8, GFP_KERNEL);
 	cd->mutual_data = devm_kzalloc(&cd->pdev->dev, mutual_size, GFP_KERNEL);
+	cd->mutual_data_manual = devm_kzalloc(&cd->pdev->dev, mutual_size,
+		GFP_KERNEL);
 	cd->self_sensing_data =
+		devm_kzalloc(&cd->pdev->dev, self_sensing_size, GFP_KERNEL);
+	cd->self_sensing_data_manual =
 		devm_kzalloc(&cd->pdev->dev, self_sensing_size, GFP_KERNEL);
 
 	/* request irq line */

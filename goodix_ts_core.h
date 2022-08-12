@@ -153,6 +153,12 @@ enum raw_scan_mode : u8 {
 	RAW_SCAN_MODE_SLEEP,
 };
 
+enum frame_data_type : u8 {
+	FRAME_DATA_TYPE_RAW = 0x81,
+	FRAME_DATA_TYPE_DIFF = 0x82,
+	FRAME_DATA_TYPE_BASE = 0x83,
+};
+
 #define MAX_SCAN_FREQ_NUM 8
 #define MAX_SCAN_RATE_NUM 8
 #define MAX_FREQ_NUM_STYLUS 8
@@ -623,6 +629,10 @@ struct goodix_ts_hw_ops {
 		struct goodix_ts_core *cd, bool enabled);
 	int (*get_screen_protector_mode_enabled)(
 		struct goodix_ts_core *cd, bool* enabled);
+	int (*get_mutual_data)(
+		struct goodix_ts_core *cd, enum frame_data_type type);
+	int (*get_self_sensing_data)(
+		struct goodix_ts_core *cd, enum frame_data_type type);
 };
 
 /*
@@ -680,6 +690,8 @@ struct goodix_ts_core {
 	size_t touch_frame_size;
 	uint16_t *mutual_data;
 	uint16_t *self_sensing_data;
+	uint16_t *mutual_data_manual;
+	uint16_t *self_sensing_data_manual;
 
 	int power_on;
 	int irq;
@@ -873,6 +885,7 @@ void inspect_module_exit(void);
 int goodix_tools_init(void);
 void goodix_tools_exit(void);
 
+int driver_test_selftest(char* buf);
 int driver_test_proc_init(struct goodix_ts_core *core_data);
 void driver_test_proc_remove(void);
 int goodix_do_inspect(struct goodix_ts_core *cd, struct ts_rawdata_info *info);
