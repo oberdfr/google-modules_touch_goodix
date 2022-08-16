@@ -1,3 +1,6 @@
+ccflags-y += -I$(srctree)/../private/google-modules/touch/common
+ccflags-y += -I$(srctree)/../private/google-modules/touch/common/include
+
 obj-$(CONFIG_TOUCHSCREEN_GOODIX_BRL) = goodix_brl_touch.o
 goodix_brl_touch-objs += \
 	goodix_brl_fwupdate.o \
