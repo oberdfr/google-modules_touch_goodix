@@ -35,6 +35,8 @@
 struct goodix_module goodix_modules;
 int core_module_prob_sate = CORE_MODULE_UNPROBED;
 
+static const struct dev_pm_ops dev_pm_ops;
+
 static int goodix_send_ic_config(struct goodix_ts_core *cd, int type);
 /**
  * __do_register_ext_module - register external module
@@ -806,7 +808,7 @@ int hardware_reset(struct device *dev)
 int set_scan_mode(struct device *dev, enum scan_mode mode)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
-	return cd->hw_ops->set_scan_mode(cd, mode);
+	return cd->hw_ops->set_scan_mode(cd, (enum raw_scan_mode)mode);
 }
 
 int set_sensing_enabled(struct device *dev, bool enabled)
@@ -826,25 +828,234 @@ int set_sensing_enabled(struct device *dev, bool enabled)
 	return 0;
 }
 
-bool get_wake_lock_state(struct device *dev, enum tpm_wakelock_type type)
+bool get_wake_lock_state(struct device *dev, enum gti_pm_wakelock_type type)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
-	return tpm_get_lock_state(&cd->tpm, type);
+	return goog_pm_wake_check_locked(cd->gti, type);
 }
 
 int set_wake_lock_state(
-	struct device *dev, enum tpm_wakelock_type type, bool locked)
+	struct device *dev, enum gti_pm_wakelock_type type, bool locked)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
 	int ret = 0;
 
-	if (locked) {
-		ret = tpm_lock_wakelock(&cd->tpm, type);
+	if (locked)
+		ret = goog_pm_wake_lock(cd->gti, type, false);
+	else
+		ret = goog_pm_wake_unlock(cd->gti, type);
+	return ret;
+}
+
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+static int gti_default_handler(void *private_data, enum gti_cmd_type cmd_type,
+	struct gti_union_cmd_data *cmd)
+{
+	int err = 0;
+
+	switch (cmd_type) {
+	case GTI_CMD_NOTIFY_DISPLAY_STATE:
+	case GTI_CMD_NOTIFY_DISPLAY_VREFRESH:
+		err = -EOPNOTSUPP;
+		break;
+	default:
+		err = -ESRCH;
+		break;
+	}
+	return err;
+}
+
+static int get_mutual_sensor_data(
+	void *private_data, struct gti_sensor_data_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	int tx = cd->ic_info.parm.drv_num;
+	int rx = cd->ic_info.parm.sen_num;
+	int ret = 0;
+
+	if (cmd->type == GTI_SENSOR_DATA_TYPE_MS) {
+		cmd->buffer = (u8 *)cd->mutual_data;
+		cmd->size = tx * rx * sizeof(uint16_t);
 	} else {
-		ret = tpm_unlock_wakelock(&cd->tpm, type);
+		/* disable irq & close esd */
+		cd->hw_ops->irq_enable(cd, false);
+		goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
+
+		ret = -EINVAL;
+		if (cmd->type == GTI_SENSOR_DATA_TYPE_MS_DIFF) {
+			ret = cd->hw_ops->get_mutual_data(cd, FRAME_DATA_TYPE_DIFF);
+		} else if (cmd->type == GTI_SENSOR_DATA_TYPE_MS_RAW) {
+			ret = cd->hw_ops->get_mutual_data(cd, FRAME_DATA_TYPE_RAW);
+		} else if (cmd->type == GTI_SENSOR_DATA_TYPE_MS_BASELINE) {
+			ret = cd->hw_ops->get_mutual_data(cd, FRAME_DATA_TYPE_BASE);
+		}
+
+		if (ret == 0) {
+			cmd->buffer = (u8 *)cd->mutual_data_manual;
+			cmd->size = tx * rx * sizeof(uint16_t);
+		}
+
+		/* enable irq & esd */
+		cd->hw_ops->irq_enable(cd, true);
+		goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
 	}
 	return ret;
 }
+
+static int get_self_sensor_data(
+	void *private_data, struct gti_sensor_data_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	int tx = cd->ic_info.parm.drv_num;
+	int rx = cd->ic_info.parm.sen_num;
+	int ret = 0;
+
+	if (cmd->type == GTI_SENSOR_DATA_TYPE_SS) {
+		cmd->buffer = (u8 *)cd->self_sensing_data;
+		cmd->size = (tx + rx) * sizeof(uint16_t);
+	} else {
+		/* disable irq & close esd */
+		cd->hw_ops->irq_enable(cd, false);
+		goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
+
+		ret = -EINVAL;
+		if (cmd->type == GTI_SENSOR_DATA_TYPE_SS_DIFF) {
+			ret = cd->hw_ops->get_self_sensing_data(cd, FRAME_DATA_TYPE_DIFF);
+		} else if (cmd->type == GTI_SENSOR_DATA_TYPE_SS_RAW) {
+			ret = cd->hw_ops->get_self_sensing_data(cd, FRAME_DATA_TYPE_RAW);
+		} else if (cmd->type == GTI_SENSOR_DATA_TYPE_SS_BASELINE) {
+			ret = cd->hw_ops->get_self_sensing_data(cd, FRAME_DATA_TYPE_BASE);
+		}
+
+		if (ret == 0) {
+			cmd->buffer = (u8 *)cd->self_sensing_data_manual;
+			cmd->size = tx * rx * sizeof(uint16_t);
+		}
+
+		/* enable irq & esd */
+		cd->hw_ops->irq_enable(cd, true);
+		goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
+	}
+	return ret;
+}
+
+static int set_continuous_report(
+	void *private_data, struct gti_continuous_report_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return cd->hw_ops->set_continuously_report_enabled(cd,
+		cmd->setting == GTI_CONTINUOUS_REPORT_ENABLE);
+}
+
+static int set_grip_enabled(struct goodix_ts_core *cd, bool enabled)
+{
+	return cd->hw_ops->set_grip_enabled(cd, enabled);
+}
+
+static int set_grip_mode(void *private_data, struct gti_grip_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return set_grip_enabled(cd, cmd->setting == GTI_GRIP_ENABLE);
+}
+
+static int get_grip_mode(void *private_data, struct gti_grip_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	bool enabled = false;
+
+	cd->hw_ops->get_grip_enabled(cd, &enabled);
+	cmd->setting = enabled ? GTI_GRIP_ENABLE : GTI_GRIP_DISABLE;
+	return 0;
+}
+
+static int set_palm_enabled(struct goodix_ts_core *cd, bool enabled)
+{
+	return cd->hw_ops->set_palm_enabled(cd, enabled);
+}
+
+static int set_palm_mode(void *private_data, struct gti_palm_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return set_palm_enabled(cd, cmd->setting == GTI_PALM_ENABLE);
+}
+
+static int get_palm_mode(void *private_data, struct gti_palm_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	bool enabled = false;
+
+	cd->hw_ops->get_palm_enabled(cd, &enabled);
+	cmd->setting = enabled ? GTI_PALM_ENABLE : GTI_PALM_DISABLE;
+	return 0;
+}
+
+static int goodix_set_screen_protector_mode_enabled(
+	struct goodix_ts_core *cd, bool enabled)
+{
+	int ret = 0;
+	ret = cd->hw_ops->set_screen_protector_mode_enabled(cd, enabled);
+	if (ret == 0)
+		cd->screen_protector_mode_enabled = enabled;
+	return ret;
+}
+
+static int set_screen_protector_mode(
+	void *private_data, struct gti_screen_protector_mode_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return goodix_set_screen_protector_mode_enabled(
+		cd, cmd->setting == GTI_SCREEN_PROTECTOR_MODE_ENABLE);
+}
+
+static int get_screen_protector_mode(
+	void *private_data, struct gti_screen_protector_mode_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	bool enabled = false;
+
+	cd->hw_ops->get_screen_protector_mode_enabled(cd, &enabled);
+	cmd->setting = enabled ? GTI_SCREEN_PROTECTOR_MODE_ENABLE :
+		GTI_SCREEN_PROTECTOR_MODE_DISABLE;
+	return 0;
+}
+
+static int set_heatmap_enabled(
+	void *private_data, struct gti_heatmap_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return cd->hw_ops->set_heatmap_enabled(cd, cmd->setting == GTI_HEATMAP_ENABLE);
+}
+
+static int gti_get_fw_version(void *private_data,
+	struct gti_fw_version_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	int ret = 0;
+
+	ret = cd->hw_ops->read_version(cd, &cd->fw_version);
+	if (ret) {
+		return ret;
+	}
+
+	snprintf(cmd->buffer, sizeof(cmd->buffer), "%02x.%02x.%02x.%02x",
+		cd->fw_version.patch_vid[0], cd->fw_version.patch_vid[1],
+		cd->fw_version.patch_vid[2], cd->fw_version.patch_vid[3]);
+	return ret;
+}
+
+static int gti_ping(void *private_data, struct gti_ping_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return cd->hw_ops->ping(cd);
+}
+
+static int git_selftest(void *private_data, struct gti_selftest_cmd *cmd)
+{
+	cmd->result = GTI_SELFTEST_RESULT_DONE;
+	return driver_test_selftest(cmd->buffer);
+}
+
+#endif
 
 /* prosfs create */
 static int rawdata_proc_show(struct seq_file *m, void *v)
@@ -1031,6 +1242,13 @@ static int goodix_parse_dt_resolution(
 		board_data->panel_max_p = GOODIX_PEN_MAX_PRESSURE;
 	}
 
+	ret = of_property_read_u32(
+		node, "goodix,panel-height-mm", &board_data->panel_height_mm);
+	if (ret) {
+		ts_err("failed get panel-height-mm");
+		return ret;
+	}
+
 	return 0;
 }
 
@@ -1151,6 +1369,18 @@ static int goodix_parse_dt(
 		return r;
 	}
 
+	r = of_property_read_u32(node, "goodix,udfps-x", &board_data->udfps_x);
+	if (r) {
+		ts_err("failed to get udfps-x");
+		return r;
+	}
+
+	r = of_property_read_u32(node, "goodix,udfps-y", &board_data->udfps_y);
+	if (r) {
+		ts_err("failed to get udfps-y");
+		return r;
+	}
+
 	/* get sleep mode flag */
 	board_data->sleep_enable =
 		of_property_read_bool(node, "goodix,sleep-enable");
@@ -1209,12 +1439,15 @@ static void goodix_ts_report_pen(
 	mutex_unlock(&dev->mutex);
 }
 
+#if !IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 static void goodix_ts_report_finger(
 	struct goodix_ts_core *cd, struct goodix_touch_data *touch_data)
 {
 	struct input_dev *dev = cd->input_dev;
 	unsigned int touch_num = touch_data->touch_num;
 	int i;
+	int panel_height_mm = cd->board_data.panel_height_mm;
+	int panel_height_pixel = cd->board_data.panel_max_y + 1;
 
 	mutex_lock(&dev->mutex);
 
@@ -1235,16 +1468,16 @@ static void goodix_ts_report_finger(
 				touch_data->coords[i].x);
 			input_report_abs(dev, ABS_MT_POSITION_Y,
 				touch_data->coords[i].y);
-			input_report_abs(dev, ABS_MT_WIDTH_MAJOR,
-				touch_data->coords[i].w);
 			input_report_abs(
 				dev, ABS_MT_PRESSURE, touch_data->coords[i].p);
 			input_report_abs(dev, ABS_MT_TOUCH_MAJOR,
-				touch_data->coords[i].major);
+				(touch_data->coords[i].major * panel_height_pixel) /
+				(10 * panel_height_mm));
 			input_report_abs(dev, ABS_MT_TOUCH_MINOR,
-				touch_data->coords[i].minor);
+				(touch_data->coords[i].minor * panel_height_pixel) /
+				(10 * panel_height_mm));
 			input_report_abs(dev, ABS_MT_ORIENTATION,
-				touch_data->coords[i].angle);
+				(touch_data->coords[i].angle * 2048) / 45);
 		} else {
 			input_mt_slot(dev, i);
 			input_mt_report_slot_state(dev, MT_TOOL_FINGER, false);
@@ -1261,6 +1494,104 @@ static void goodix_ts_report_finger(
 
 	mutex_unlock(&dev->mutex);
 }
+#endif
+
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+static void goodix_ts_report_finger_goog(
+	struct goodix_ts_core *cd, struct goodix_touch_data *touch_data)
+{
+	struct input_dev *dev = cd->input_dev;
+	struct goog_touch_interface *gti = cd->gti;
+	unsigned int touch_num = touch_data->touch_num;
+	int i;
+	int panel_height_mm = cd->board_data.panel_height_mm;
+	int panel_height_pixel = cd->board_data.panel_max_y + 1;
+
+	goog_input_lock(gti);
+
+	goog_input_set_timestamp(gti, dev, cd->coords_timestamp);
+	for (i = 0; i < GOODIX_MAX_TOUCH; i++) {
+		struct goodix_ts_coords *coord = &touch_data->coords[i];
+		if (coord->status == TS_TOUCH) {
+			goog_input_mt_slot(gti, dev, i);
+			goog_input_mt_report_slot_state(
+				gti, dev, MT_TOOL_FINGER, true);
+			goog_input_report_abs(
+				gti, dev, ABS_MT_POSITION_X, coord->x);
+			goog_input_report_abs(
+				gti, dev, ABS_MT_POSITION_Y, coord->y);
+			goog_input_report_abs(
+				gti, dev, ABS_MT_PRESSURE, coord->p);
+			goog_input_report_abs(gti, dev, ABS_MT_TOUCH_MAJOR,
+				(touch_data->coords[i].major * panel_height_pixel) /
+				(10 * panel_height_mm));
+			goog_input_report_abs(gti, dev, ABS_MT_TOUCH_MINOR,
+				(touch_data->coords[i].minor * panel_height_pixel) /
+				(10 * panel_height_mm));
+			goog_input_report_abs(
+				gti, dev, ABS_MT_ORIENTATION, (coord->angle * 2048) / 45);
+		} else {
+			goog_input_mt_slot(gti, dev, i);
+			goog_input_mt_report_slot_state(
+				gti, dev, MT_TOOL_FINGER, false);
+		}
+	}
+
+	goog_input_report_key(gti, dev, BTN_TOUCH, touch_num > 0 ? 1 : 0);
+	goog_input_sync(gti, dev);
+	goog_input_process(gti);
+
+	goog_input_unlock(gti);
+
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
+	touch_mf_update_state(&cd->tmf, touch_num);
+#endif
+}
+#endif
+
+static void goodix_ts_report_gesture_up(struct goodix_ts_core *cd)
+{
+	struct input_dev *dev = cd->input_dev;
+
+	ts_info("goodix_ts_report_gesture_up");
+
+	mutex_lock(&dev->mutex);
+
+	input_set_timestamp(dev, cd->coords_timestamp);
+
+	/* Finger down on UDFPS area. */
+	input_mt_slot(dev, 0);
+	input_report_key(dev, BTN_TOUCH, 1);
+	input_mt_report_slot_state(dev, MT_TOOL_FINGER, 1);
+	input_report_abs(dev, ABS_MT_POSITION_X, cd->board_data.udfps_x);
+	input_report_abs(dev, ABS_MT_POSITION_Y, cd->board_data.udfps_y);
+	input_report_abs(dev, ABS_MT_TOUCH_MAJOR, 200);
+	input_report_abs(dev, ABS_MT_TOUCH_MINOR, 200);
+#ifndef SKIP_PRESSURE
+	input_report_abs(dev, ABS_MT_PRESSURE, 1);
+#endif
+	/*input_report_abs(dev, ABS_MT_ORIENTATION,
+		ts_data->fts_gesture_data.orientation[0]);*/
+	input_sync(dev);
+
+	/* Report MT_TOOL_PALM for canceling the touch event. */
+	input_mt_slot(dev, 0);
+	input_report_key(dev, BTN_TOUCH, 1);
+	input_mt_report_slot_state(dev, MT_TOOL_PALM, 1);
+	input_sync(dev);
+
+	/* Release touches. */
+	input_mt_slot(dev, 0);
+#ifndef SKIP_PRESSURE
+	input_report_abs(dev, ABS_MT_PRESSURE, 0);
+#endif
+	input_mt_report_slot_state(dev, MT_TOOL_FINGER, 0);
+	input_report_abs(dev, ABS_MT_TRACKING_ID, -1);
+	input_report_key(dev, BTN_TOUCH, 0);
+	input_sync(dev);
+
+	mutex_unlock(&dev->mutex);
+}
 
 static int goodix_ts_request_handle(
 	struct goodix_ts_core *cd, struct goodix_ts_event *ts_event)
@@ -1272,6 +1603,10 @@ static int goodix_ts_request_handle(
 		ret = goodix_send_ic_config(cd, CONFIG_TYPE_NORMAL);
 	else if (ts_event->request_code == REQUEST_TYPE_RESET)
 		ret = hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+	else if (ts_event->request_code == REQUEST_TYPE_UPDATE)
+		ret = goodix_do_fw_update(
+			NULL, UPDATE_MODE_FORCE | UPDATE_MODE_BLOCK |
+				      UPDATE_MODE_SRC_REQUEST);
 	else
 		ts_info("can not handle request type 0x%x",
 			ts_event->request_code);
@@ -1292,6 +1627,55 @@ static irqreturn_t goodix_ts_isr(int irq, void *data)
 	return IRQ_WAKE_THREAD;
 }
 
+void goodix_ts_report_status(struct goodix_ts_core *core_data,
+	struct goodix_ts_event *ts_event)
+{
+	struct goodix_status_data *st = &ts_event->status_data;
+	int i;
+	u8 checksum = 0;
+	int len = sizeof(ts_event->status_data);
+	u8 *data = (u8 *)st;
+	struct gti_fw_status_data status_data = { 0 };
+
+	for (i = 0; i < len - 1; i++)
+		checksum += data[i];
+	if (checksum != st->checksum) {
+		ts_err("status data checksum error");
+		return;
+	}
+
+	ts_info("grip_change[%d] noise_lv_change[%d] palm_change[%d] soft_reset[%d] base_update[%d] hop_change[%d] water_change[%d]",
+		st->grip_change, st->noise_lv_change, st->palm_change,
+		st->soft_reset, st->base_update, st->hop_change,
+		st->water_change);
+	ts_info("water_status[%d] before_factorA[%d] after_factorA[%d] base_update_type[0x%x] soft_reset_type[0x%x] palm_status[%d] noise_lv[%d] grip_type[%d]",
+		st->water_sta, st->before_factorA, st->after_factorA,
+		st->base_update_type, st->soft_reset_type, st->palm_sta,
+		st->noise_lv, st->grip_type);
+
+	if (st->soft_reset)
+		goog_notify_fw_status_changed(core_data->gti, GTI_FW_STATUE_RESET,
+			&status_data);
+
+	if (st->palm_change) {
+		goog_notify_fw_status_changed(core_data->gti,
+			st->palm_sta ? GTI_FW_STATUE_PALM_ENTER : GTI_FW_STATUE_PALM_EXIT,
+			&status_data);
+	}
+
+	if (st->grip_change) {
+		goog_notify_fw_status_changed(core_data->gti,
+			st->grip_type ? GTI_FW_STATUE_GRIP_ENTER : GTI_FW_STATUE_GRIP_EXIT,
+			&status_data);
+	}
+
+	if (st->noise_lv_change) {
+		status_data.noise_level = st->noise_lv;
+		goog_notify_fw_status_changed(core_data->gti, GTI_FW_STATUE_NOISE_MODE,
+			&status_data);
+	}
+}
+
 /**
  * goodix_ts_threadirq_func - Bottom half of interrupt
  * This functions is excuted in thread context,
@@ -1309,9 +1693,10 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	struct goodix_ts_esd *ts_esd = &core_data->ts_esd;
 	int ret;
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
-	tpm_lock_wakelock(&core_data->tpm,
-		TPM_WAKELOCK_TYPE_IRQ | TPM_WAKELOCK_TYPE_NON_WAKE_UP);
+	cpu_latency_qos_update_request(&core_data->pm_qos_req, 100 /* usec */);
+
+#if IS_ENABLED(CONFIG_GTI_PM)
+	goog_pm_wake_lock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ, true);
 #endif
 
 	ts_esd->irq_status = true;
@@ -1325,9 +1710,8 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		ret = ext_module->funcs->irq_event(core_data, ext_module);
 		if (ret == EVT_CANCEL_IRQEVT) {
 			mutex_unlock(&goodix_modules.mutex);
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
-			tpm_unlock_wakelock(
-				&core_data->tpm, TPM_WAKELOCK_TYPE_IRQ);
+#if IS_ENABLED(CONFIG_GTI_PM)
+			goog_pm_wake_unlock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
 #endif
 			return IRQ_HANDLED;
 		}
@@ -1337,24 +1721,39 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	/* read touch data from touch device */
 	ret = hw_ops->event_handler(core_data, ts_event);
 	if (likely(!ret)) {
-		if (ts_event->event_type == EVENT_TOUCH) {
+		if (ts_event->event_type & EVENT_TOUCH) {
 			/* report touch */
 			core_data->coords_timestamp = core_data->isr_timestamp;
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+			goodix_ts_report_finger_goog(
+				core_data, &ts_event->touch_data);
+#else
 			goodix_ts_report_finger(
 				core_data, &ts_event->touch_data);
+#endif
+		}
+		if (ts_event->event_type & EVENT_GESTURE) {
+			core_data->coords_timestamp = core_data->isr_timestamp;
 		}
 		if (core_data->board_data.pen_enable &&
-			ts_event->event_type == EVENT_PEN) {
+			ts_event->event_type & EVENT_PEN) {
 			goodix_ts_report_pen(
 				core_data->pen_dev, &ts_event->pen_data);
 		}
-		if (ts_event->event_type == EVENT_REQUEST)
+		if (ts_event->event_type & EVENT_REQUEST)
 			goodix_ts_request_handle(core_data, ts_event);
+		if (ts_event->event_type & EVENT_STATUS)
+			goodix_ts_report_status(core_data, ts_event);
+
+		/* read done */
+		hw_ops->after_event_handler(core_data);
 	}
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
-	tpm_unlock_wakelock(&core_data->tpm, TPM_WAKELOCK_TYPE_IRQ);
+#if IS_ENABLED(CONFIG_GTI_PM)
+	goog_pm_wake_unlock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
 #endif
+
+	cpu_latency_qos_update_request(&core_data->pm_qos_req, PM_QOS_DEFAULT_VALUE);
 	return IRQ_HANDLED;
 }
 
@@ -1598,13 +1997,12 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 		input_dev, ABS_MT_POSITION_X, 0, ts_bdata->panel_max_x, 0, 0);
 	input_set_abs_params(
 		input_dev, ABS_MT_POSITION_Y, 0, ts_bdata->panel_max_y, 0, 0);
-	input_set_abs_params(input_dev, ABS_MT_WIDTH_MAJOR, 0, 255, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_PRESSURE, 0, 255, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR, 0, ts_bdata->panel_max_y, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_TOUCH_MINOR, 0, ts_bdata->panel_max_x, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_ORIENTATION, -4096, 4096, 0, 0);
 	input_set_abs_params(
-		input_dev, ABS_MT_TOUCH_MAJOR, 0, ts_bdata->panel_max_w, 0, 0);
-	input_set_abs_params(
-		input_dev, ABS_MT_TOUCH_MINOR, 0, ts_bdata->panel_max_w, 0, 0);
-	input_set_abs_params(input_dev, ABS_MT_ORIENTATION, -90, 90, 0, 0);
+		input_dev, ABS_MT_TOOL_TYPE, MT_TOOL_FINGER, MT_TOOL_PALM, 0, 0);
 #ifdef INPUT_TYPE_B_PROTOCOL
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 7, 0)
 	input_mt_init_slots(input_dev, GOODIX_MAX_TOUCH, INPUT_MT_DIRECT);
@@ -1834,6 +2232,7 @@ void goodix_ts_esd_uninit(struct goodix_ts_core *cd)
 	goodix_ts_unregister_notifier(&ts_esd->esd_notifier);
 }
 
+#if !IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 static void goodix_ts_release_connects(struct goodix_ts_core *core_data)
 {
 	struct input_dev *input_dev = core_data->input_dev;
@@ -1851,6 +2250,30 @@ static void goodix_ts_release_connects(struct goodix_ts_core *core_data)
 
 	mutex_unlock(&input_dev->mutex);
 }
+#endif
+
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+static void goodix_ts_release_connects_goog(struct goodix_ts_core *core_data)
+{
+	struct input_dev *input_dev = core_data->input_dev;
+	struct goog_touch_interface *gti = core_data->gti;
+	int i;
+
+	goog_input_lock(gti);
+
+	goog_input_set_timestamp(gti, input_dev, KTIME_RELEASE_ALL);
+	for (i = 0; i < GOODIX_MAX_TOUCH; i++) {
+		goog_input_mt_slot(gti, input_dev, i);
+		goog_input_mt_report_slot_state(
+			gti, input_dev, MT_TOOL_FINGER, false);
+	}
+	goog_input_report_key(gti, input_dev, BTN_TOUCH, 0);
+	goog_input_sync(gti, input_dev);
+	goog_input_process(gti);
+
+	goog_input_unlock(gti);
+}
+#endif
 
 /**
  * goodix_ts_suspend - Touchscreen suspend function
@@ -1928,9 +2351,60 @@ static int goodix_ts_suspend(struct goodix_ts_core *core_data)
 	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
 
 out:
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+	goodix_ts_release_connects_goog(core_data);
+#else
 	goodix_ts_release_connects(core_data);
+#endif
+
 	ts_info("Suspend end");
 	return 0;
+}
+
+static bool check_gesture_mode(struct goodix_ts_core *core_data)
+{
+	enum raw_scan_mode scan_mode = RAW_SCAN_MODE_AUTO;
+	int err = 0;
+
+	err = core_data->hw_ops->get_scan_mode(core_data, &scan_mode);
+	if (err != 0) {
+		return false;
+	}
+	return (scan_mode == RAW_SCAN_MODE_LOW_POWER_ACTIVE) ||
+		(scan_mode == RAW_SCAN_MODE_LOW_POWER_IDLE);
+}
+
+static void monitor_gesture_event(struct work_struct *work)
+{
+	struct delayed_work *delayed_work = container_of(
+		work, struct delayed_work, work);
+	struct goodix_ts_core *cd = container_of(delayed_work, struct goodix_ts_core,
+		monitor_gesture_work);
+	struct goodix_gesture_data* gesture_data = &cd->ts_event.gesture_data;
+
+	if (gesture_data->gesture_type == GOODIX_GESTURE_UNKNOWN) {
+		if (ktime_get() < cd->gesture_down_timeout) {
+			queue_delayed_work(cd->event_wq, &cd->monitor_gesture_work,
+				msecs_to_jiffies(5));
+			return;
+		}
+		cd->coords_timestamp = ktime_get();
+	} else if (gesture_data->gesture_type == GOODIX_GESTURE_FOD_DOWN) {
+		if (ktime_get() < cd->gesture_up_timeout) {
+			queue_delayed_work(cd->event_wq, &cd->monitor_gesture_work,
+				msecs_to_jiffies(5));
+			return;
+		}
+		cd->coords_timestamp = ktime_get();
+	}
+
+	goodix_ts_report_gesture_up(cd);
+
+	/* reset device or power on*/
+	if (cd->board_data.sleep_enable)
+		cd->hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+	else
+		goodix_ts_power_on(cd);
 }
 
 /**
@@ -1941,6 +2415,7 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
 {
 	struct goodix_ext_module *ext_module, *next;
 	struct goodix_ts_hw_ops *hw_ops = core_data->hw_ops;
+	struct goodix_gesture_data* gesture_data = &core_data->ts_event.gesture_data;
 	int ret;
 
 	if (core_data->init_stage < CORE_INIT_STAGE2 ||
@@ -1973,11 +2448,19 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
 	}
 	mutex_unlock(&goodix_modules.mutex);
 
-	/* reset device or power on*/
-	if (core_data->board_data.sleep_enable)
-		hw_ops->resume(core_data);
-	else
-		goodix_ts_power_on(core_data);
+	if (check_gesture_mode(core_data)) {
+		gesture_data->gesture_type = GOODIX_GESTURE_UNKNOWN;
+		core_data->gesture_down_timeout = ktime_add_ms(ktime_get(), 100);
+		core_data->gesture_up_timeout = ktime_add_ms(ktime_get(), 500);
+		queue_delayed_work(core_data->event_wq, &core_data->monitor_gesture_work,
+			msecs_to_jiffies(5));
+	} else {
+		/* reset device or power on*/
+		if (core_data->board_data.sleep_enable)
+			hw_ops->reset(core_data, GOODIX_NORMAL_RESET_DELAY_MS);
+		else
+			goodix_ts_power_on(core_data);
+	}
 
 	mutex_lock(&goodix_modules.mutex);
 	if (!list_empty(&goodix_modules.head)) {
@@ -2094,6 +2577,18 @@ static int goodix_generic_noti_callback(
 int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 {
 	int ret;
+	int tx = cd->ic_info.parm.drv_num;
+	int rx = cd->ic_info.parm.sen_num;
+	size_t mutual_size = tx * rx * sizeof(s16);
+	size_t self_sensing_size = (tx + rx) * sizeof(s16);
+	struct goodix_ic_info_misc *misc = &cd->ic_info.misc;
+	size_t touch_frame_size =
+		misc->frame_data_addr - misc->touch_data_addr +
+		misc->frame_data_head_len + misc->fw_attr_len +
+		misc->fw_log_len + sizeof(struct goodix_mutual_data) +
+		mutual_size + sizeof(struct goodix_self_sensing_data) +
+		self_sensing_size;
+	struct gti_optional_configuration *options;
 
 	/* alloc/config/register input device */
 	ret = goodix_ts_input_dev_config(cd);
@@ -2110,19 +2605,8 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 		}
 	}
 
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
-	cd->tpm.pdev = cd->pdev;
-#ifdef CONFIG_OF
-	cd->tpm.of_node = cd->bus->dev->of_node;
-#endif
-	cd->tpm.resume = goodix_ts_pm_resume;
-	cd->tpm.suspend = goodix_ts_pm_suspend;
-	ret = tpm_register_notification(&cd->tpm);
-	if (ret < 0) {
-		ts_info("Failed to egister touch pm");
-		goto err_init_tpm;
-	}
-#endif
+	cpu_latency_qos_add_request(&cd->pm_qos_req, PM_QOS_DEFAULT_VALUE);
+
 #if IS_ENABLED(CONFIG_FB)
 	cd->fb_notifier.notifier_call = goodix_ts_fb_notifier_callback;
 	if (fb_register_client(&cd->fb_notifier))
@@ -2154,13 +2638,53 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	cd->apis_data.set_sensing_enabled = set_sensing_enabled;
 	cd->apis_data.get_wake_lock_state = get_wake_lock_state;
 	cd->apis_data.set_wake_lock_state = set_wake_lock_state;
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
 	cd->apis_data.tmf = &cd->tmf;
+#endif
 
 	ret = touch_apis_init(&cd->pdev->dev, &cd->apis_data);
 	if (ret < 0) {
 		ts_err("failed set init apis");
 		goto err_init_apis;
 	}
+
+	cd->event_wq = alloc_workqueue("goodix_wq", WQ_UNBOUND |
+		WQ_HIGHPRI | WQ_CPU_INTENSIVE, 1);
+	if (!cd->event_wq) {
+		ts_err("Cannot create work thread\n");
+		ret = -ENOMEM;
+		goto err_alloc_workqueue;
+	}
+	INIT_DELAYED_WORK(&cd->monitor_gesture_work, monitor_gesture_event);
+
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+	options = devm_kzalloc(&cd->pdev->dev,
+		sizeof(struct gti_optional_configuration), GFP_KERNEL);
+	options->get_mutual_sensor_data = get_mutual_sensor_data;
+	options->get_self_sensor_data = get_self_sensor_data;
+	options->set_continuous_report = set_continuous_report;
+	options->set_grip_mode = set_grip_mode;
+	options->get_grip_mode = get_grip_mode;
+	options->set_palm_mode = set_palm_mode;
+	options->get_palm_mode = get_palm_mode;
+	options->set_screen_protector_mode = set_screen_protector_mode;
+	options->get_screen_protector_mode = get_screen_protector_mode;
+	options->set_heatmap_enabled = set_heatmap_enabled;
+	options->get_fw_version = gti_get_fw_version;
+	options->ping = gti_ping;
+	options->selftest = git_selftest;
+
+	cd->gti = goog_touch_interface_probe(
+		cd, cd->bus->dev, cd->input_dev, gti_default_handler, options);
+
+#if IS_ENABLED(CONFIG_GTI_PM)
+	ret = goog_pm_register_notification(cd->gti, &dev_pm_ops);
+	if (ret < 0) {
+		ts_info("Failed to egister gti pm");
+		goto err_init_tpm;
+	}
+#endif
+#endif
 
 	/* create procfs files */
 	ret = goodix_ts_procfs_init(cd);
@@ -2176,12 +2700,14 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 		goto err_init_esd;
 	}
 
+#if IS_ENABLED(CONFIG_GOODIX_GESTURE)
 	/* gesture init */
 	ret = gesture_module_init();
 	if (ret < 0) {
 		ts_err("failed set init gesture");
 		goto err_init_gesture;
 	}
+#endif
 
 	/* inspect init */
 	ret = inspect_module_init();
@@ -2189,6 +2715,17 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 		ts_err("failed set init inspect");
 		goto err_init_inspect;
 	}
+
+	cd->touch_frame_size = touch_frame_size;
+	cd->touch_frame_package =
+		devm_kzalloc(&cd->pdev->dev, touch_frame_size + 8, GFP_KERNEL);
+	cd->mutual_data = devm_kzalloc(&cd->pdev->dev, mutual_size, GFP_KERNEL);
+	cd->mutual_data_manual = devm_kzalloc(&cd->pdev->dev, mutual_size,
+		GFP_KERNEL);
+	cd->self_sensing_data =
+		devm_kzalloc(&cd->pdev->dev, self_sensing_size, GFP_KERNEL);
+	cd->self_sensing_data_manual =
+		devm_kzalloc(&cd->pdev->dev, self_sensing_size, GFP_KERNEL);
 
 	/* request irq line */
 	ret = goodix_ts_irq_setup(cd);
@@ -2203,12 +2740,20 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 err_setup_irq:
 	inspect_module_exit();
 err_init_inspect:
+#if IS_ENABLED(CONFIG_GOODIX_GESTURE)
 	gesture_module_exit();
 err_init_gesture:
+#endif
 	goodix_ts_esd_uninit(cd);
 err_init_esd:
 	goodix_ts_procfs_exit(cd);
 err_init_procfs:
+#if IS_ENABLED(CONFIG_GTI_PM)
+	goog_pm_unregister_notification(cd->gti);
+err_init_tpm:
+#endif
+	destroy_workqueue(cd->event_wq);
+err_alloc_workqueue:
 	touch_apis_deinit(&cd->pdev->dev);
 err_init_apis:
 	goodix_ts_sysfs_exit(cd);
@@ -2216,10 +2761,7 @@ err_init_sysfs:
 #if IS_ENABLED(CONFIG_FB)
 	fb_unregister_client(&cd->fb_notifier);
 #endif
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
-	tpm_unregister_notification(&cd->tpm);
-err_init_tpm:
-#endif
+	cpu_latency_qos_remove_request(&cd->pm_qos_req);
 	goodix_ts_pen_dev_remove(cd);
 err_finger:
 	goodix_ts_input_dev_remove(cd);
@@ -2409,11 +2951,13 @@ static int goodix_ts_probe(struct platform_device *pdev)
 		core_module_prob_sate = CORE_MODULE_PROB_FAILED;
 		return -EINVAL;
 	}
+	mutex_init(&core_data->cmd_lock);
 	goodix_core_module_init();
 	/* touch core layer is a platform driver */
 	core_data->pdev = pdev;
 	core_data->bus = bus_interface;
 	platform_set_drvdata(pdev, core_data);
+	dev_set_drvdata(bus_interface->dev, core_data);
 
 	ret = goodix_pinctrl_init(core_data);
 	if (ret) {
@@ -2482,6 +3026,7 @@ err_init_tools:
 err_setup_gpio:
 	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
 err_out:
+	mutex_destroy(&core_data->cmd_lock);
 	core_data->init_stage = CORE_INIT_FAIL;
 	core_module_prob_sate = CORE_MODULE_PROB_FAILED;
 	ts_err("goodix_ts_core failed, ret:%d", ret);
@@ -2499,15 +3044,15 @@ static int goodix_ts_remove(struct platform_device *pdev)
 	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
 
 	if (core_data->init_stage >= CORE_INIT_STAGE2) {
+#if IS_ENABLED(CONFIG_GOODIX_GESTURE)
 		gesture_module_exit();
+#endif
 		inspect_module_exit();
 		hw_ops->irq_enable(core_data, false);
-#if IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
-		tpm_unregister_notification(&core_data->tpm);
-#endif
 #if IS_ENABLED(CONFIG_FB)
 		fb_unregister_client(&core_data->fb_notifier);
 #endif
+		cpu_latency_qos_remove_request(&core_data->pm_qos_req);
 		core_module_prob_sate = CORE_MODULE_REMOVED;
 		goodix_ts_esd_uninit(core_data);
 
@@ -2515,6 +3060,13 @@ static int goodix_ts_remove(struct platform_device *pdev)
 		goodix_ts_input_dev_remove(core_data);
 		goodix_ts_pen_dev_remove(core_data);
 		goodix_ts_sysfs_exit(core_data);
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+#if IS_ENABLED(CONFIG_GTI_PM)
+		goog_pm_unregister_notification(core_data->gti);
+#endif
+		goog_touch_interface_remove(core_data->gti);
+#endif
+		destroy_workqueue(core_data->event_wq);
 		touch_apis_deinit(&core_data->pdev->dev);
 		goodix_ts_procfs_exit(core_data);
 		goodix_ts_power_off(core_data);
@@ -2525,11 +3077,8 @@ static int goodix_ts_remove(struct platform_device *pdev)
 
 #if IS_ENABLED(CONFIG_PM)
 static const struct dev_pm_ops dev_pm_ops = {
-#if !IS_ENABLED(CONFIG_FB) && !IS_ENABLED(CONFIG_HAS_EARLYSUSPEND) &&          \
-	!IS_ENABLED(CONFIG_TOUCHSCREEN_PM)
 	.suspend = goodix_ts_pm_suspend,
 	.resume = goodix_ts_pm_resume,
-#endif
 };
 #endif
 
@@ -2543,7 +3092,10 @@ static struct platform_driver goodix_ts_driver = {
 		.name = GOODIX_CORE_DRIVER_NAME,
 		.owner = THIS_MODULE,
 #if IS_ENABLED(CONFIG_PM)
+#if !IS_ENABLED(CONFIG_FB) && !IS_ENABLED(CONFIG_HAS_EARLYSUSPEND) &&          \
+	!IS_ENABLED(CONFIG_GTI_PM)
 		.pm = &dev_pm_ops,
+#endif
 #endif
 	},
 	.probe = goodix_ts_probe,

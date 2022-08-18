@@ -124,6 +124,7 @@ static ssize_t list_scan_mode_show(
 	return ret;
 }
 
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
 static ssize_t mf_mode_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -155,6 +156,7 @@ static ssize_t mf_mode_store(struct device *dev, struct device_attribute *attr,
 	apis->mf_mode = mode;
 	return count;
 }
+#endif
 
 static ssize_t ping_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
@@ -299,7 +301,7 @@ static ssize_t wake_lock_show(
 
 	if (apis->get_wake_lock_state != NULL) {
 		locked = apis->get_wake_lock_state(
-			dev, TPM_WAKELOCK_TYPE_FORCE_ACTIVE);
+			dev, GTI_PM_WAKELOCK_TYPE_FORCE_ACTIVE);
 		ret = snprintf(buf, PAGE_SIZE, "result: %s\n",
 			locked ? "locked" : "unlocked");
 	} else {
@@ -327,7 +329,7 @@ static ssize_t wake_lock_store(struct device *dev,
 
 	if (apis->set_wake_lock_state != NULL) {
 		ret = apis->set_wake_lock_state(
-			dev, TPM_WAKELOCK_TYPE_FORCE_ACTIVE, locked);
+			dev, GTI_PM_WAKELOCK_TYPE_FORCE_ACTIVE, locked);
 		if (ret < 0) {
 			return ret;
 		}
@@ -339,7 +341,9 @@ static DEVICE_ATTR_RO(fw_ver);
 static DEVICE_ATTR_RO(help);
 static DEVICE_ATTR_RW(irq_enabled);
 static DEVICE_ATTR_RO(list_scan_mode);
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
 static DEVICE_ATTR_RW(mf_mode);
+#endif
 static DEVICE_ATTR_RO(ping);
 static DEVICE_ATTR_RW(reset);
 static DEVICE_ATTR_RW(scan_mode);
@@ -351,7 +355,9 @@ static struct attribute *sysfs_attrs[] = {
 	&dev_attr_help.attr,
 	&dev_attr_irq_enabled.attr,
 	&dev_attr_list_scan_mode.attr,
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
 	&dev_attr_mf_mode.attr,
+#endif
 	&dev_attr_ping.attr,
 	&dev_attr_reset.attr,
 	&dev_attr_scan_mode.attr,

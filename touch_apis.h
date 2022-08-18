@@ -8,10 +8,14 @@
 #ifndef _TOUCH_APIS_H_
 #define _TOUCH_APIS_H_
 
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
 #include "touch_mf_mode.h"
-#include "touch_pm.h"
+#endif
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+#include <goog_touch_interface.h>
+#endif
 
-enum scan_mode {
+enum scan_mode : u8 {
 	SCAN_MODE_AUTO = 0,
 	SCAN_MODE_NORMAL_ACTIVE,
 	SCAN_MODE_NORMAL_IDLE,
@@ -30,8 +34,10 @@ enum reset_result {
 struct touch_apis_data {
 	int reset_result;
 	int scan_mode;
+#if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
 	struct touch_mf *tmf;
 	enum touch_mf_mode mf_mode;
+#endif
 
 	int (*get_fw_version)(struct device *dev, char *buf, size_t buf_size);
 	int (*get_irq_enabled)(struct device *dev);
@@ -43,9 +49,9 @@ struct touch_apis_data {
 	int (*set_scan_mode)(struct device *dev, enum scan_mode mode);
 	int (*set_sensing_enabled)(struct device *dev, bool enabled);
 	bool (*get_wake_lock_state)(
-		struct device *dev, enum tpm_wakelock_type type);
+		struct device *dev, enum gti_pm_wakelock_type type);
 	int (*set_wake_lock_state)(
-		struct device *dev, enum tpm_wakelock_type type, bool locked);
+		struct device *dev, enum gti_pm_wakelock_type type, bool locked);
 };
 
 extern int touch_apis_init(struct device *dev, struct touch_apis_data *data);

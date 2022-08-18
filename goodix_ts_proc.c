@@ -12,6 +12,7 @@
 #define CMD_AUTO_NOISE_TEST "auto_noise_test"
 #define CMD_SHORT_TEST "short_test"
 #define CMD_GET_PACKAGE_ID "get_package_id"
+#define CMD_GET_MCU_ID "get_mcu_id"
 #define CMD_GET_VERSION "get_version"
 #define CMD_GET_RAWDATA "get_raw"
 #define CMD_GET_DIFFDATA "get_diff"
@@ -22,7 +23,8 @@
 #define CMD_SET_DOUBLE_TAP "set_double_tap"
 #define CMD_SET_SINGLE_TAP "set_single_tap"
 #define CMD_SET_LONG_PRESS "set_long_press"
-#define CMD_SET_GESTURE_PARAM "set_gesture_param"
+#define CMD_SET_ST_PARAM "set_st_param"
+#define CMD_SET_LP_PARAM "set_lp_param"
 #define CMD_SET_CHARGE_MODE "set_charge_mode"
 #define CMD_SET_IRQ_ENABLE "set_irq_enable"
 #define CMD_SET_ESD_ENABLE "set_esd_enable"
@@ -38,6 +40,7 @@
 #define CMD_GET_FW_STATUS "get_fw_status"
 #define CMD_SET_HIGHSENSE_MODE "set_highsense_mode"
 #define CMD_SET_GRIP_DATA "set_grip_data"
+#define CMD_SET_GRIP_MODE "set_grip_mode"
 #define CMD_SET_PALM_MODE "set_palm_mode"
 #define CMD_SET_NOISE_MODE "set_noise_mode"
 #define CMD_SET_WATER_MODE "set_water_mode"
@@ -45,15 +48,16 @@
 
 char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_SELF_OPEN_TEST, CMD_NOISE_TEST, CMD_AUTO_NOISE_TEST, CMD_SHORT_TEST,
-	CMD_GET_PACKAGE_ID, CMD_GET_VERSION, CMD_GET_RAWDATA, CMD_GET_DIFFDATA,
-	CMD_GET_BASEDATA, CMD_GET_SELF_RAWDATA, CMD_GET_SELF_DIFFDATA,
-	CMD_GET_SELF_BASEDATA, CMD_SET_DOUBLE_TAP, CMD_SET_SINGLE_TAP,
-	CMD_SET_LONG_PRESS, CMD_SET_GESTURE_PARAM, CMD_SET_CHARGE_MODE,
-	CMD_SET_IRQ_ENABLE, CMD_SET_ESD_ENABLE, CMD_SET_DEBUG_LOG,
-	CMD_SET_SCAN_MODE, CMD_GET_SCAN_MODE, CMD_SET_CONTINUE_MODE,
-	CMD_GET_CHANNEL_NUM, CMD_GET_TX_FREQ, CMD_RESET, CMD_SET_SENSE_MODE,
-	CMD_GET_CONFIG, CMD_GET_FW_STATUS, CMD_SET_HIGHSENSE_MODE,
-	CMD_SET_GRIP_DATA, CMD_SET_PALM_MODE, CMD_SET_NOISE_MODE,
+	CMD_GET_PACKAGE_ID, CMD_GET_MCU_ID, CMD_GET_VERSION, CMD_GET_RAWDATA,
+	CMD_GET_DIFFDATA, CMD_GET_BASEDATA, CMD_GET_SELF_RAWDATA,
+	CMD_GET_SELF_DIFFDATA, CMD_GET_SELF_BASEDATA, CMD_SET_DOUBLE_TAP,
+	CMD_SET_SINGLE_TAP, CMD_SET_LONG_PRESS, CMD_SET_ST_PARAM,
+	CMD_SET_LP_PARAM, CMD_SET_CHARGE_MODE, CMD_SET_IRQ_ENABLE,
+	CMD_SET_ESD_ENABLE, CMD_SET_DEBUG_LOG, CMD_SET_SCAN_MODE,
+	CMD_GET_SCAN_MODE, CMD_SET_CONTINUE_MODE, CMD_GET_CHANNEL_NUM,
+	CMD_GET_TX_FREQ, CMD_RESET, CMD_SET_SENSE_MODE, CMD_GET_CONFIG,
+	CMD_GET_FW_STATUS, CMD_SET_HIGHSENSE_MODE, CMD_SET_GRIP_DATA,
+	CMD_SET_GRIP_MODE, CMD_SET_PALM_MODE, CMD_SET_NOISE_MODE,
 	CMD_SET_WATER_MODE, CMD_SET_HEATMAP, NULL };
 
 /* test limits keyword */
@@ -70,6 +74,7 @@ char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 #define PALM_FUNC 0
 #define NOISE_FUNC 1
 #define WATER_FUNC 2
+#define GRIP_FUNC 3
 
 #define SHORT_SIZE 150
 #define LARGE_SIZE 4096
@@ -100,9 +105,12 @@ static uint32_t index;
 #define MAX_SEN_NUM 35
 #define MAX_SHORT_NUM 15
 
+#define GESTURE_STTW 0
+#define GESTURE_LPTW 1
 typedef union __attribute__((packed)) {
 	struct {
-		u16 length;
+		u8 length;
+		u8 type;
 		u16 st_min_x;
 		u16 st_max_x;
 		u16 st_min_y;
@@ -111,6 +119,16 @@ typedef union __attribute__((packed)) {
 		u16 st_max_count;
 		u16 st_motion_tolerance;
 		u16 st_max_size;
+		u16 checksum;
+	};
+	u8 buf[20];
+} gesture_param_st_t;
+static gesture_param_st_t gesture_param_st;
+
+typedef union __attribute__((packed)) {
+	struct {
+		u8 length;
+		u8 type;
 		u16 lp_min_x;
 		u16 lp_max_x;
 		u16 lp_min_y;
@@ -130,9 +148,9 @@ typedef union __attribute__((packed)) {
 		u16 lp_motion_tolerance_outer;
 		u16 checksum;
 	};
-	u8 buf[50];
-} gesture_param_t;
-static gesture_param_t gesture_param;
+	u8 buf[34];
+} gesture_param_lp_t;
+static gesture_param_lp_t gesture_param_lp;
 
 typedef struct __attribute__((packed)) {
 	u8 result;
@@ -674,20 +692,24 @@ static int goodix_shortcircut_analysis(void)
 {
 	int ret;
 	int err = 0;
+	u8 temp_buf[62];
 	test_result_t test_result;
 
-	ret = cd->hw_ops->read(cd, SHORT_TEST_RESULT_REG_NOT,
-		(u8 *)&test_result, sizeof(test_result));
+	ret = cd->hw_ops->read(
+		cd, SHORT_TEST_RESULT_REG_NOT, temp_buf, sizeof(temp_buf));
 	if (ret < 0) {
 		ts_err("Read TEST_RESULT_REG failed");
 		return ret;
 	}
 
-	if (checksum_cmp((u8 *)&test_result, sizeof(test_result),
+	if (checksum_cmp(&temp_buf[sizeof(test_result)],
+		    sizeof(temp_buf) - sizeof(test_result),
 		    CHECKSUM_MODE_U8_LE)) {
-		ts_err("shrot result checksum err");
+		ts_err("short result checksum err");
 		return -EINVAL;
 	}
+
+	memcpy((u8 *)&test_result, temp_buf, sizeof(test_result));
 
 	if (!(test_result.result & 0x0F)) {
 		ts_info(">>>>> No shortcircut");
@@ -830,18 +852,23 @@ typedef struct __attribute__((packed)) {
 #define FLASH_CMD_STATE_OKAY 0x07
 static int goodix_flash_cmd(uint8_t cmd, uint8_t status, int retry_count)
 {
-	struct goodix_ts_cmd temp_cmd;
+	u8 cmd_buf[] = { 0x00, 0x00, 0x04, 0x00, 0x00, 0x00 };
 	int ret;
 	int i;
 	u8 r_sta;
 
-	temp_cmd.len = 4;
-	temp_cmd.cmd = cmd;
-	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
+	cmd_buf[3] = cmd;
+	goodix_append_checksum(&cmd_buf[2], 2, CHECKSUM_MODE_U8_LE);
+	ret = cd->hw_ops->write(
+		cd, cd->ic_info.misc.cmd_addr, cmd_buf, sizeof(cmd_buf));
 	if (ret < 0)
 		return ret;
 
+	if (retry_count == 0)
+		return 0;
+
 	for (i = 0; i < retry_count; i++) {
+		usleep_range(2000, 2100);
 		ret = cd->hw_ops->read(
 			cd, cd->ic_info.misc.cmd_addr, &r_sta, 1);
 		if (ret == 0 && r_sta == status)
@@ -858,7 +885,6 @@ static int goodix_flash_read(u32 addr, u8 *buf, int len)
 	int ret;
 	u8 *tmp_buf;
 	u32 buffer_addr = cd->ic_info.misc.fw_buffer_addr;
-	struct goodix_ts_cmd temp_cmd;
 	uint32_t checksum = 0;
 	flash_head_info_t head_info;
 	u8 *p = (u8 *)&head_info.address;
@@ -900,8 +926,8 @@ static int goodix_flash_read(u32 addr, u8 *buf, int len)
 		goto read_end;
 	}
 
-	checksum = 0;
-	for (i = 0; i < len + sizeof(flash_head_info_t) - 4; i += 2)
+	checksum = len % 2 ? tmp_buf[len + sizeof(flash_head_info_t) - 1] : 0;
+	for (i = 0; i < len + sizeof(flash_head_info_t) - 6; i += 2)
 		checksum += tmp_buf[4 + i] | (tmp_buf[5 + i] << 8);
 
 	if (checksum != le32_to_cpup((__le32 *)tmp_buf)) {
@@ -913,9 +939,7 @@ static int goodix_flash_read(u32 addr, u8 *buf, int len)
 	memcpy(buf, tmp_buf + sizeof(flash_head_info_t), len);
 	ret = 0;
 read_end:
-	temp_cmd.len = 4;
-	temp_cmd.cmd = 0x0C;
-	cd->hw_ops->send_cmd(cd, &temp_cmd);
+	goodix_flash_cmd(0x0C, 0, 0);
 	return ret;
 }
 
@@ -956,8 +980,6 @@ static const struct seq_operations seq_ops = {
 
 static int driver_test_open(struct inode *inode, struct file *file)
 {
-	memset(wbuf, 0, sizeof(wbuf));
-
 	return seq_open(file, &seq_ops);
 }
 
@@ -1301,6 +1323,12 @@ static void goodix_save_test_result(bool is_brief)
 			index += sprintf(&rbuf[index], "%s\n",
 				ts_test->result[GTP_CAP_TEST] ? "PASS"
 							      : "FAIL");
+		}
+		if (ts_test->item[GTP_DELTA_TEST]) {
+			index += sprintf(&rbuf[index], "Delta test:\n");
+			index += sprintf(&rbuf[index], "%s\n",
+				ts_test->result[GTP_DELTA_TEST] ? "PASS"
+								: "FAIL");
 		}
 		if (ts_test->item[GTP_SHORT_TEST]) {
 			index += sprintf(&rbuf[index], "Short test:\n");
@@ -1688,7 +1716,7 @@ static int goodix_open_test(void)
 		}
 
 		cd->hw_ops->read(cd, raw_addr, tmp_buf, tx * rx * 2);
-		goodix_rotate_abcd2cbad(tx, rx, (s16 *)tmp_buf);
+		goodix_rotate_abcd2cbad(tx, rx, (s16 *)tmp_buf, NULL);
 		memcpy((u8 *)ts_test->rawdata[i].data, tmp_buf, tx * rx * 2);
 	}
 
@@ -1847,7 +1875,7 @@ static int goodix_noise_test(void)
 		}
 
 		cd->hw_ops->read(cd, raw_addr, tmp_buf, tx * rx * 2);
-		goodix_rotate_abcd2cbad(tx, rx, (s16 *)tmp_buf);
+		goodix_rotate_abcd2cbad(tx, rx, (s16 *)tmp_buf, NULL);
 		memcpy((u8 *)ts_test->noisedata[i].data, tmp_buf, tx * rx * 2);
 	}
 
@@ -1963,7 +1991,7 @@ static void goodix_auto_noise_test(u16 cnt, int threshold)
 	}
 
 	cd->hw_ops->read(cd, raw_addr, (u8 *)tmp_buf, tx * rx * 2);
-	goodix_rotate_abcd2cbad(tx, rx, tmp_buf);
+	goodix_rotate_abcd2cbad(tx, rx, tmp_buf, NULL);
 	index += sprintf(&rbuf[index], "max:\n");
 	for (i = 0; i < tx * rx; i++) {
 		tmp_val = tmp_buf[i];
@@ -1988,7 +2016,7 @@ static void goodix_auto_noise_test(u16 cnt, int threshold)
 		goto exit;
 	}
 	cd->hw_ops->read(cd, raw_addr, (u8 *)tmp_buf, tx * rx * 2);
-	goodix_rotate_abcd2cbad(tx, rx, tmp_buf);
+	goodix_rotate_abcd2cbad(tx, rx, tmp_buf, NULL);
 	index += sprintf(&rbuf[index], "min:\n");
 	for (i = 0; i < tx * rx; i++) {
 		tmp_val = tmp_buf[i];
@@ -2100,7 +2128,7 @@ static int get_cap_data(uint8_t *type)
 			ts_err("read frame data failed");
 			goto exit;
 		}
-		goodix_rotate_abcd2cbad(tx, rx, (s16 *)frame_buf);
+		goodix_rotate_abcd2cbad(tx, rx, (s16 *)frame_buf, NULL);
 		for (i = 0; i < tx * rx; i++) {
 			index += sprintf(
 				&rbuf[index], "%5d,", *((s16 *)frame_buf + i));
@@ -2144,7 +2172,6 @@ static void goodix_set_sense_mode(u8 val)
 	if (val == 1) {
 		/* normal mode */
 		index = sprintf(rbuf, "switch to coordinate mode\n");
-		cd->hw_ops->resume(cd);
 		cd->hw_ops->send_cmd(cd, &temp_cmd);
 		goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
 		cd->hw_ops->irq_enable(cd, true);
@@ -2153,7 +2180,6 @@ static void goodix_set_sense_mode(u8 val)
 		/* gesture mode */
 		index = sprintf(rbuf, "switch to gesture mode\n");
 		goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
-		cd->hw_ops->resume(cd);
 		cd->hw_ops->gesture(cd, 0);
 		cd->hw_ops->irq_enable(cd, true);
 		atomic_set(&cd->suspended, 1);
@@ -2170,32 +2196,19 @@ static void goodix_set_scan_mode(u8 val)
 {
 	struct goodix_ts_cmd temp_cmd;
 
+	temp_cmd.len = 5;
+	temp_cmd.cmd = 0x9F;
+
 	if (val == 0) {
-		temp_cmd.len = 5;
-		temp_cmd.cmd = 0x9F;
 		temp_cmd.data[0] = 0;
-		cd->hw_ops->send_cmd(cd, &temp_cmd);
-		temp_cmd.len = 6;
-		temp_cmd.cmd = 0x25;
-		temp_cmd.data[0] = 0;
-		temp_cmd.data[1] = 0;
 		ts_info("set scan mode to default");
 		index = sprintf(rbuf, "set scan mode to default\n");
 	} else if (val == 1) {
-		temp_cmd.len = 5;
-		temp_cmd.cmd = 0x9F;
-		temp_cmd.data[0] = 1;
+		temp_cmd.data[0] = 3;
 		ts_info("set scan mode to idle");
 		index = sprintf(rbuf, "set scan mode to idle\n");
 	} else {
-		temp_cmd.len = 5;
-		temp_cmd.cmd = 0x9F;
-		temp_cmd.data[0] = 0;
-		cd->hw_ops->send_cmd(cd, &temp_cmd);
-		temp_cmd.len = 6;
-		temp_cmd.cmd = 0x25;
-		temp_cmd.data[0] = 0xff;
-		temp_cmd.data[1] = 0xff;
+		temp_cmd.data[0] = 2;
 		ts_info("set scan mode to active");
 		index = sprintf(rbuf, "set scan mode to active\n");
 	}
@@ -2205,38 +2218,23 @@ static void goodix_set_scan_mode(u8 val)
 
 static void goodix_get_scan_mode(void)
 {
-	u32 cmd_addr = cd->ic_info.misc.cmd_addr;
-	u8 cmd_buf[] = { 0x00, 0x00, 0x05, 0xC5, 0x01, 0xCB, 0x00 };
-	u8 rcv_buf[2];
-	int retry = 20;
+	u8 status;
 
-	cd->hw_ops->write(cd, cmd_addr, cmd_buf, sizeof(cmd_buf));
-	while (retry--) {
-		usleep_range(2000, 2100);
-		cd->hw_ops->read(cd, cmd_addr, rcv_buf, sizeof(rcv_buf));
-		if (rcv_buf[0] == 0x80 && rcv_buf[1] == 0x80)
-			break;
-	}
-	if (retry < 0) {
-		ts_err("failed get scan mode, sta[%x] ack[%x]", rcv_buf[0],
-			rcv_buf[1]);
-		return;
-	}
-	cd->hw_ops->read(cd, 0x10184, rcv_buf, sizeof(rcv_buf));
-	ts_info("rcv_buf:%x %x", rcv_buf[0], rcv_buf[1]);
+	cd->hw_ops->read(cd, 0x10219, &status, 1);
+	ts_info("ic status:%d", status);
 
-	if (rcv_buf[1] == 1) {
+	if (status == 1) {
 		index = sprintf(rbuf, "normal active\n");
-	} else if (rcv_buf[1] == 2) {
+	} else if (status == 2) {
 		index = sprintf(rbuf, "normal idle\n");
-	} else if (rcv_buf[1] == 3) {
+	} else if (status == 3) {
 		index = sprintf(rbuf, "lowpower active\n");
-	} else if (rcv_buf[1] == 4) {
+	} else if (status == 4) {
 		index = sprintf(rbuf, "lowpower idle\n");
-	} else if (rcv_buf[1] == 5) {
+	} else if (status == 5) {
 		index = sprintf(rbuf, "sleep\n");
 	} else {
-		index = sprintf(rbuf, "invalid mode %d\n", rcv_buf[1]);
+		index = sprintf(rbuf, "invalid mode %d\n", status);
 	}
 }
 
@@ -2289,6 +2287,18 @@ static void goodix_get_fw_status(void)
 		 cd->ic_info.misc.fw_attr_len;
 	status_addr = offset + 38;
 	noise_lv_addr = offset + 65;
+
+	cd->hw_ops->read(cd, 0x1021A, &val, 1);
+	index += sprintf(
+		&rbuf[index], "set_highsense_mode[%d] ", (val >> 6) & 0x01);
+	index +=
+		sprintf(&rbuf[index], "set_noise_mode[%d] ", (val >> 4) & 0x03);
+	index +=
+		sprintf(&rbuf[index], "set_water_mode[%d] ", (val >> 3) & 0x01);
+	index += sprintf(&rbuf[index], "set_grip_mode[%d] ", (val >> 2) & 0x01);
+	index += sprintf(&rbuf[index], "set_palm_mode[%d] ", (val >> 1) & 0x01);
+	index += sprintf(
+		&rbuf[index], "set_heatmap_mode[%d]\n", (val >> 0) & 0x01);
 
 	cd->hw_ops->read(cd, status_addr, &val, 1);
 	ts_info("addr:0x%04x fw_status:0x%02X", status_addr, val);
@@ -2367,34 +2377,34 @@ static void goodix_set_custom_mode(u8 type, u8 val)
 {
 	struct goodix_ts_cmd temp_cmd;
 
-	temp_cmd.len = 6;
-	temp_cmd.cmd = 0xC7;
-	temp_cmd.data[0] = type;
-
-	if (type == PALM_FUNC)
-		index += sprintf(&rbuf[index], "palm ");
-	else if (type == NOISE_FUNC)
-		index += sprintf(&rbuf[index], "noise ");
-	else if (type == WATER_FUNC)
-		index += sprintf(&rbuf[index], "water ");
-	else {
+	if (type == PALM_FUNC) {
+		index = sprintf(&rbuf[index], "set palm %s\n",
+			val ? "enabled" : "disabled");
+	} else if (type == NOISE_FUNC) {
+		if (val == 0) {
+			index = sprintf(&rbuf[index], "set noise disabled\n");
+		} else if (val == 1) {
+			index = sprintf(&rbuf[index], "set noise enabled\n");
+		} else if (val == 2) {
+			index = sprintf(&rbuf[index], "set noise lv0\n");
+		} else {
+			index = sprintf(&rbuf[index], "set noise lv1\n");
+		}
+	} else if (type == WATER_FUNC) {
+		index = sprintf(&rbuf[index], "set water %s\n",
+			val ? "enabled" : "disabled");
+	} else if (type == GRIP_FUNC) {
+		index = sprintf(&rbuf[index], "set grip %s\n",
+			val ? "enabled" : "disabled");
+	} else {
 		ts_err("invalid type, %d", type);
 		return;
 	}
 
-	if (val == 1) {
-		ts_info("restore");
-		index += sprintf(&rbuf[index], "restore\n");
-		temp_cmd.data[1] = 0;
-	} else if (val == 0) {
-		ts_info("disabled");
-		index += sprintf(&rbuf[index], "disabled\n");
-		temp_cmd.data[1] = 1;
-	} else {
-		ts_err("invalid val, %d", val);
-		return;
-	}
-
+	temp_cmd.len = 6;
+	temp_cmd.cmd = 0xC7;
+	temp_cmd.data[0] = type;
+	temp_cmd.data[1] = val;
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 }
 
@@ -2415,85 +2425,104 @@ static int obtain_param(char **buf)
 	return val;
 }
 
-static int goodix_parse_gesture_param(char **buf)
+static int goodix_parse_gesture_param(u8 type, char **buf)
 {
-	gesture_param.length = 50;
-	gesture_param.st_min_x = obtain_param(buf);
-	gesture_param.st_max_x = obtain_param(buf);
-	gesture_param.st_min_y = obtain_param(buf);
-	gesture_param.st_max_y = obtain_param(buf);
-	gesture_param.st_min_count = obtain_param(buf);
-	gesture_param.st_max_count = obtain_param(buf);
-	gesture_param.st_motion_tolerance = obtain_param(buf);
-	gesture_param.st_max_size = obtain_param(buf);
-	gesture_param.lp_min_x = obtain_param(buf);
-	gesture_param.lp_max_x = obtain_param(buf);
-	gesture_param.lp_min_y = obtain_param(buf);
-	gesture_param.lp_max_y = obtain_param(buf);
-	gesture_param.lp_min_count = obtain_param(buf);
-	gesture_param.lp_max_size = obtain_param(buf);
-	gesture_param.lp_marginal_min_x = obtain_param(buf);
-	gesture_param.lp_marginal_max_x = obtain_param(buf);
-	gesture_param.lp_marginal_min_y = obtain_param(buf);
-	gesture_param.lp_marginal_max_y = obtain_param(buf);
-	gesture_param.lp_monitor_chan_min_tx = obtain_param(buf);
-	gesture_param.lp_monitor_chan_max_tx = obtain_param(buf);
-	gesture_param.lp_monitor_chan_min_rx = obtain_param(buf);
-	gesture_param.lp_monitor_chan_max_rx = obtain_param(buf);
-	gesture_param.lp_min_node_count = obtain_param(buf);
-	gesture_param.lp_motion_tolerance_inner = obtain_param(buf);
-	gesture_param.lp_motion_tolerance_outer = obtain_param(buf);
-	goodix_append_checksum(gesture_param.buf, 48, CHECKSUM_MODE_U8_LE);
-
-	ts_info("st_min_x:                  %d", gesture_param.st_min_x);
-	ts_info("st_max_x:                  %d", gesture_param.st_max_x);
-	ts_info("st_min_y:                  %d", gesture_param.st_min_y);
-	ts_info("st_max_y:                  %d", gesture_param.st_max_y);
-	ts_info("st_min_count:              %d", gesture_param.st_min_count);
-	ts_info("st_max_count:              %d", gesture_param.st_max_count);
-	ts_info("st_motion_tolerance:       %d",
-		gesture_param.st_motion_tolerance);
-	ts_info("st_max_size:               %d", gesture_param.st_max_size);
-	ts_info("lp_min_x:                  %d", gesture_param.lp_min_x);
-	ts_info("lp_max_x:                  %d", gesture_param.lp_max_x);
-	ts_info("lp_min_y:                  %d", gesture_param.lp_min_y);
-	ts_info("lp_max_y:                  %d", gesture_param.lp_max_y);
-	ts_info("lp_min_count:              %d", gesture_param.lp_min_count);
-	ts_info("lp_max_size:               %d", gesture_param.lp_max_size);
-	ts_info("lp_marginal_min_x:         %d",
-		gesture_param.lp_marginal_min_x);
-	ts_info("lp_marginal_max_x:         %d",
-		gesture_param.lp_marginal_max_x);
-	ts_info("lp_marginal_min_y:         %d",
-		gesture_param.lp_marginal_min_y);
-	ts_info("lp_marginal_max_y:         %d",
-		gesture_param.lp_marginal_max_y);
-	ts_info("lp_monitor_chan_min_tx:    %d",
-		gesture_param.lp_monitor_chan_min_tx);
-	ts_info("lp_monitor_chan_max_tx:    %d",
-		gesture_param.lp_monitor_chan_max_tx);
-	ts_info("lp_monitor_chan_min_rx:    %d",
-		gesture_param.lp_monitor_chan_min_rx);
-	ts_info("lp_monitor_chan_max_rx:    %d",
-		gesture_param.lp_monitor_chan_max_rx);
-	ts_info("lp_min_node_count:         %d",
-		gesture_param.lp_min_node_count);
-	ts_info("lp_motion_tolerance_inner: %d",
-		gesture_param.lp_motion_tolerance_inner);
-	ts_info("lp_motion_tolerance_outer: %d",
-		gesture_param.lp_motion_tolerance_outer);
+	if (type == GESTURE_STTW) {
+		gesture_param_st.length = sizeof(gesture_param_st);
+		gesture_param_st.type = type;
+		gesture_param_st.st_min_x = obtain_param(buf);
+		gesture_param_st.st_max_x = obtain_param(buf);
+		gesture_param_st.st_min_y = obtain_param(buf);
+		gesture_param_st.st_max_y = obtain_param(buf);
+		gesture_param_st.st_min_count = obtain_param(buf);
+		gesture_param_st.st_max_count = obtain_param(buf);
+		gesture_param_st.st_motion_tolerance = obtain_param(buf);
+		gesture_param_st.st_max_size = obtain_param(buf);
+		goodix_append_checksum(gesture_param_st.buf,
+			sizeof(gesture_param_st) - 2, CHECKSUM_MODE_U8_LE);
+		ts_info("st_min_x:                  %d",
+			gesture_param_st.st_min_x);
+		ts_info("st_max_x:                  %d",
+			gesture_param_st.st_max_x);
+		ts_info("st_min_y:                  %d",
+			gesture_param_st.st_min_y);
+		ts_info("st_max_y:                  %d",
+			gesture_param_st.st_max_y);
+		ts_info("st_min_count:              %d",
+			gesture_param_st.st_min_count);
+		ts_info("st_max_count:              %d",
+			gesture_param_st.st_max_count);
+		ts_info("st_motion_tolerance:       %d",
+			gesture_param_st.st_motion_tolerance);
+		ts_info("st_max_size:               %d",
+			gesture_param_st.st_max_size);
+	} else {
+		gesture_param_lp.length = sizeof(gesture_param_lp);
+		gesture_param_lp.type = type;
+		gesture_param_lp.lp_min_x = obtain_param(buf);
+		gesture_param_lp.lp_max_x = obtain_param(buf);
+		gesture_param_lp.lp_min_y = obtain_param(buf);
+		gesture_param_lp.lp_max_y = obtain_param(buf);
+		gesture_param_lp.lp_min_count = obtain_param(buf);
+		gesture_param_lp.lp_max_size = obtain_param(buf);
+		gesture_param_lp.lp_marginal_min_x = obtain_param(buf);
+		gesture_param_lp.lp_marginal_max_x = obtain_param(buf);
+		gesture_param_lp.lp_marginal_min_y = obtain_param(buf);
+		gesture_param_lp.lp_marginal_max_y = obtain_param(buf);
+		gesture_param_lp.lp_monitor_chan_min_tx = obtain_param(buf);
+		gesture_param_lp.lp_monitor_chan_max_tx = obtain_param(buf);
+		gesture_param_lp.lp_monitor_chan_min_rx = obtain_param(buf);
+		gesture_param_lp.lp_monitor_chan_max_rx = obtain_param(buf);
+		gesture_param_lp.lp_min_node_count = obtain_param(buf);
+		gesture_param_lp.lp_motion_tolerance_inner = obtain_param(buf);
+		gesture_param_lp.lp_motion_tolerance_outer = obtain_param(buf);
+		goodix_append_checksum(gesture_param_lp.buf,
+			sizeof(gesture_param_lp) - 2, CHECKSUM_MODE_U8_LE);
+		ts_info("lp_min_x:                  %d",
+			gesture_param_lp.lp_min_x);
+		ts_info("lp_max_x:                  %d",
+			gesture_param_lp.lp_max_x);
+		ts_info("lp_min_y:                  %d",
+			gesture_param_lp.lp_min_y);
+		ts_info("lp_max_y:                  %d",
+			gesture_param_lp.lp_max_y);
+		ts_info("lp_min_count:              %d",
+			gesture_param_lp.lp_min_count);
+		ts_info("lp_max_size:               %d",
+			gesture_param_lp.lp_max_size);
+		ts_info("lp_marginal_min_x:         %d",
+			gesture_param_lp.lp_marginal_min_x);
+		ts_info("lp_marginal_max_x:         %d",
+			gesture_param_lp.lp_marginal_max_x);
+		ts_info("lp_marginal_min_y:         %d",
+			gesture_param_lp.lp_marginal_min_y);
+		ts_info("lp_marginal_max_y:         %d",
+			gesture_param_lp.lp_marginal_max_y);
+		ts_info("lp_monitor_chan_min_tx:    %d",
+			gesture_param_lp.lp_monitor_chan_min_tx);
+		ts_info("lp_monitor_chan_max_tx:    %d",
+			gesture_param_lp.lp_monitor_chan_max_tx);
+		ts_info("lp_monitor_chan_min_rx:    %d",
+			gesture_param_lp.lp_monitor_chan_min_rx);
+		ts_info("lp_monitor_chan_max_rx:    %d",
+			gesture_param_lp.lp_monitor_chan_max_rx);
+		ts_info("lp_min_node_count:         %d",
+			gesture_param_lp.lp_min_node_count);
+		ts_info("lp_motion_tolerance_inner: %d",
+			gesture_param_lp.lp_motion_tolerance_inner);
+		ts_info("lp_motion_tolerance_outer: %d",
+			gesture_param_lp.lp_motion_tolerance_outer);
+	}
 
 	return 0;
 }
 
-static void goodix_set_gesture_param(void)
+static void goodix_set_gesture_param(u8 type)
 {
 	struct goodix_ts_cmd temp_cmd;
 	u32 cmd_reg = cd->ic_info.misc.cmd_addr;
 	int retry;
 	u8 status;
-
-	ts_info("param:%*ph", 50, gesture_param.buf);
 
 	temp_cmd.len = 4;
 	temp_cmd.cmd = 0xC8;
@@ -2510,8 +2539,17 @@ static void goodix_set_gesture_param(void)
 			status);
 		goto exit;
 	}
-	cd->hw_ops->write(
-		cd, 0x13D80, gesture_param.buf, sizeof(gesture_param));
+	if (type == GESTURE_STTW) {
+		ts_info("STTW param:%*ph", gesture_param_st.length,
+			gesture_param_st.buf);
+		cd->hw_ops->write(cd, 0x13D80, gesture_param_st.buf,
+			sizeof(gesture_param_st));
+	} else {
+		ts_info("LPTW param:%*ph", gesture_param_lp.length,
+			gesture_param_lp.buf);
+		cd->hw_ops->write(cd, 0x13D80, gesture_param_lp.buf,
+			sizeof(gesture_param_lp));
+	}
 
 	temp_cmd.len = 4;
 	temp_cmd.cmd = 0x05;
@@ -2549,17 +2587,14 @@ static void goodix_set_heatmap(int val)
 	cd->hw_ops->irq_enable(cd, false);
 	if (val == 0) {
 		index = sprintf(rbuf, "disable heatmap\n");
-		kfree(cd->heatmap_buffer);
-		cd->heatmap_buffer = NULL;
 		temp_cmd.len = 5;
-		temp_cmd.cmd = 0x90;
+		temp_cmd.cmd = 0xC9;
 		temp_cmd.data[0] = 0;
 	} else {
 		index = sprintf(rbuf, "enable heatmap\n");
-		cd->heatmap_buffer = kcalloc(1000, sizeof(s16), GFP_KERNEL);
 		temp_cmd.len = 5;
-		temp_cmd.cmd = 0x90;
-		temp_cmd.data[0] = 2;
+		temp_cmd.cmd = 0xC9;
+		temp_cmd.data[0] = 1;
 	}
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 	cd->hw_ops->irq_enable(cd, true);
@@ -2582,6 +2617,7 @@ static ssize_t driver_test_write(
 		return count;
 	}
 
+	memset(wbuf, 0, sizeof(wbuf));
 	if (copy_from_user(p, buf, count) != 0) {
 		ts_err("copy from user failed");
 		return count;
@@ -2841,6 +2877,7 @@ static ssize_t driver_test_write(
 		}
 		ts_test->item[GTP_CAP_TEST] = true;
 		ts_test->item[GTP_NOISE_TEST] = true;
+		ts_test->item[GTP_DELTA_TEST] = true;
 		ts_test->item[GTP_SELFCAP_TEST] = true;
 		ts_test->item[GTP_SHORT_TEST] = true;
 		goodix_auto_test(true);
@@ -2944,12 +2981,28 @@ static ssize_t driver_test_write(
 
 	if (!strncmp(p, CMD_GET_PACKAGE_ID, strlen(CMD_GET_PACKAGE_ID))) {
 		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		mutex_lock(&cd->cmd_lock);
+		usleep_range(6000, 6100);
 		ret = goodix_flash_read(0x1F301, &id, 1);
+		mutex_unlock(&cd->cmd_lock);
 		if (ret < 0)
 			index = sprintf(rbuf, "%s: NG\n", CMD_GET_PACKAGE_ID);
 		else
 			index = sprintf(
 				rbuf, "%s: 0x%x\n", CMD_GET_PACKAGE_ID, id);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_GET_MCU_ID, strlen(CMD_GET_MCU_ID))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		mutex_lock(&cd->cmd_lock);
+		usleep_range(6000, 6100);
+		ret = goodix_flash_read(0x1F314, &id, 1);
+		mutex_unlock(&cd->cmd_lock);
+		if (ret < 0)
+			index = sprintf(rbuf, "%s: NG\n", CMD_GET_MCU_ID);
+		else
+			index = sprintf(rbuf, "%s: 0x%x\n", CMD_GET_MCU_ID, id);
 		goto exit;
 	}
 
@@ -3116,6 +3169,23 @@ static ssize_t driver_test_write(
 		goto exit;
 	}
 
+	if (!strncmp(p, CMD_SET_GRIP_MODE, strlen(CMD_SET_GRIP_MODE))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_GRIP_MODE);
+			goto exit;
+		}
+		if (kstrtos32(p, 10, &cmd_val)) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_GRIP_MODE);
+			goto exit;
+		}
+		goodix_set_custom_mode(GRIP_FUNC, cmd_val);
+		goto exit;
+	}
+
 	if (!strncmp(p, CMD_SET_PALM_MODE, strlen(CMD_SET_PALM_MODE))) {
 		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
 		token = strsep(&p, ",");
@@ -3167,16 +3237,29 @@ static ssize_t driver_test_write(
 		goto exit;
 	}
 
-	if (!strncmp(p, CMD_SET_GESTURE_PARAM, strlen(CMD_SET_GESTURE_PARAM))) {
+	if (!strncmp(p, CMD_SET_ST_PARAM, strlen(CMD_SET_ST_PARAM))) {
 		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
 		token = strsep(&p, ",");
 		if (!token || !p) {
 			index = sprintf(rbuf, "%s: invalid cmd param\n",
-				CMD_SET_GESTURE_PARAM);
+				CMD_SET_ST_PARAM);
 			goto exit;
 		}
-		goodix_parse_gesture_param(&p);
-		goodix_set_gesture_param();
+		goodix_parse_gesture_param(GESTURE_STTW, &p);
+		goodix_set_gesture_param(GESTURE_STTW);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_SET_LP_PARAM, strlen(CMD_SET_LP_PARAM))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_LP_PARAM);
+			goto exit;
+		}
+		goodix_parse_gesture_param(GESTURE_LPTW, &p);
+		goodix_set_gesture_param(GESTURE_LPTW);
 		goto exit;
 	}
 
@@ -3255,6 +3338,38 @@ static const struct file_operations cmd_list_ops = {
 	.release = single_release,
 };
 #endif
+
+int driver_test_selftest(char* buf)
+{
+	int ret = 0;
+
+	release_test_resource();
+	index = 0;
+	if (rbuf != NULL) {
+		kfree(rbuf);
+		rbuf = NULL;
+	}
+
+	raw_data_cnt = 16;
+	noise_data_cnt = 1;
+	rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+	ret = malloc_test_resource();
+	if (ret < 0) {
+		ts_err("malloc test resource failed");
+		goto exit;
+	}
+	ts_test->item[GTP_CAP_TEST] = true;
+	ts_test->item[GTP_NOISE_TEST] = true;
+	ts_test->item[GTP_DELTA_TEST] = true;
+	ts_test->item[GTP_SELFCAP_TEST] = true;
+	ts_test->item[GTP_SHORT_TEST] = true;
+	goodix_auto_test(true);
+
+	strlcpy(buf, rbuf, PAGE_SIZE);
+
+exit:
+	return ret;
+}
 
 int driver_test_proc_init(struct goodix_ts_core *core_data)
 {
