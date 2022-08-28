@@ -45,6 +45,8 @@
 #define CMD_SET_NOISE_MODE "set_noise_mode"
 #define CMD_SET_WATER_MODE "set_water_mode"
 #define CMD_SET_HEATMAP "set_heatmap"
+#define CMD_GET_SELF_COMPEN "get_self_compensation"
+#define CMD_SET_REPORT_RATE "set_report_rate"
 
 char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_SELF_OPEN_TEST, CMD_NOISE_TEST, CMD_AUTO_NOISE_TEST, CMD_SHORT_TEST,
@@ -58,11 +60,14 @@ char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_GET_TX_FREQ, CMD_RESET, CMD_SET_SENSE_MODE, CMD_GET_CONFIG,
 	CMD_GET_FW_STATUS, CMD_SET_HIGHSENSE_MODE, CMD_SET_GRIP_DATA,
 	CMD_SET_GRIP_MODE, CMD_SET_PALM_MODE, CMD_SET_NOISE_MODE,
-	CMD_SET_WATER_MODE, CMD_SET_HEATMAP, NULL };
+	CMD_SET_WATER_MODE, CMD_SET_HEATMAP, CMD_GET_SELF_COMPEN,
+	CMD_SET_REPORT_RATE, NULL };
 
 /* test limits keyword */
 #define CSV_TP_SPECIAL_RAW_MIN "special_raw_min"
 #define CSV_TP_SPECIAL_RAW_MAX "special_raw_max"
+#define CSV_TP_SPECIAL_FREQ_RAW_MIN "special_freq_raw_min"
+#define CSV_IP_SPECIAL_FREQ_RAW_MAX "special_freq_raw_max"
 #define CSV_TP_SPECIAL_RAW_DELTA "special_raw_delta"
 #define CSV_TP_SHORT_THRESHOLD "shortciurt_threshold"
 #define CSV_TP_SPECIAL_SELFRAW_MAX "special_selfraw_max"
@@ -77,7 +82,7 @@ char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 #define GRIP_FUNC 3
 
 #define SHORT_SIZE 150
-#define LARGE_SIZE 4096
+#define LARGE_SIZE 5 * 1024
 #define MAX_FRAME_CNT 50
 #define HUGE_SIZE MAX_FRAME_CNT * 20 * 1024
 static struct goodix_ts_core *cd;
@@ -100,10 +105,49 @@ static uint32_t index;
 #define TEST_OK 1
 #define TEST_NG 0
 
-#define MAX_LINE_LEN (1024 * 6)
-#define MAX_DRV_NUM 17
-#define MAX_SEN_NUM 35
+#define MAX_LINE_LEN (1024 * 10)
+#define MAX_DRV_NUM 52
+#define MAX_SEN_NUM 75
 #define MAX_SHORT_NUM 15
+
+/* berlin B */
+#define MAX_DRV_NUM_BRB 52
+#define MAX_SEN_NUM_BRB 75
+#define SHORT_TEST_TIME_REG_BRB 0x26AE0
+#define DFT_ADC_DUMP_NUM_BRB 762
+#define DFT_SHORT_THRESHOLD_BRB 100
+#define DFT_DIFFCODE_SHORT_THRESHOLD_BRB 32
+#define SHORT_TEST_STATUS_REG_BRB 0x20400
+#define SHORT_TEST_RESULT_REG_BRB 0x20410
+#define DRV_DRV_SELFCODE_REG_BRB 0x2049A
+#define SEN_SEN_SELFCODE_REG_BRB 0x21AF2
+#define DRV_SEN_SELFCODE_REG_BRB 0x248A6
+#define DIFF_CODE_DATA_REG_BRB 0x269E0
+
+/* berlinD */
+#define MAX_DRV_NUM_BRD 20
+#define MAX_SEN_NUM_BRD 40
+#define SHORT_TEST_TIME_REG_BRD 0x14D7A
+#define DFT_ADC_DUMP_NUM_BRD 762
+#define DFT_SHORT_THRESHOLD_BRD 100
+#define DFT_DIFFCODE_SHORT_THRESHOLD_BRD 32
+#define SHORT_TEST_STATUS_REG_BRD 0x13400
+#define SHORT_TEST_RESULT_REG_BRD 0x13408
+#define DRV_DRV_SELFCODE_REG_BRD 0x1344E
+#define SEN_SEN_SELFCODE_REG_BRD 0x137E6
+#define DRV_SEN_SELFCODE_REG_BRD 0x14556
+#define DIFF_CODE_DATA_REG_BRD 0x14D00
+
+/* nottingham */
+#define MAX_DRV_NUM_NOT 17
+#define MAX_SEN_NUM_NOT 35
+#define SHORT_TEST_TIME_REG_NOT 0x1479E
+#define SHORT_TEST_STATUS_REG_NOT 0x13400
+#define SHORT_TEST_RESULT_REG_NOT 0x13408
+#define DRV_DRV_SELFCODE_REG_NOT 0x13446
+#define SEN_SEN_SELFCODE_REG_NOT 0x136EE
+#define DRV_SEN_SELFCODE_REG_NOT 0x14152
+#define DIFF_CODE_DATA_REG_NOT 0x14734
 
 #define GESTURE_STTW 0
 #define GESTURE_LPTW 1
@@ -162,6 +206,85 @@ typedef struct __attribute__((packed)) {
 	u16 checksum;
 } test_result_t;
 
+/* berlin B drv-sen map */
+static u8 brl_b_drv_map[] = { 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86,
+	87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103,
+	104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117,
+	118, 119, 120, 121, 122, 123, 124, 125, 126 };
+
+static u8 brl_b_sen_map[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+	15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+	33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+	51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+	69, 70, 71, 72, 73, 74 };
+
+/* berlin D drv-sen map */
+static u8 brl_d_drv_map[] = {
+	40,
+	41,
+	42,
+	43,
+	44,
+	45,
+	46,
+	47,
+	48,
+	49,
+	50,
+	51,
+	52,
+	53,
+	54,
+	55,
+	56,
+	57,
+	58,
+	59,
+};
+
+static u8 brl_d_sen_map[] = {
+	0,
+	1,
+	2,
+	3,
+	4,
+	5,
+	6,
+	7,
+	8,
+	9,
+	10,
+	11,
+	12,
+	13,
+	14,
+	15,
+	16,
+	17,
+	18,
+	19,
+	20,
+	21,
+	22,
+	23,
+	24,
+	25,
+	26,
+	27,
+	28,
+	29,
+	30,
+	31,
+	32,
+	33,
+	34,
+	35,
+	36,
+	37,
+	38,
+	39,
+};
+
 /* nottingham drv-sen map */
 static u8 not_drv_map[] = { 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
 	48, 49, 50, 51 };
@@ -169,6 +292,74 @@ static u8 not_drv_map[] = { 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
 static u8 not_sen_map[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
 	15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
 	33, 34 };
+
+struct ts_short_test_info {
+	u32 max_drv_num;
+	u32 max_sen_num;
+	u8 *drv_map;
+	u8 *sen_map;
+	u32 short_test_time_reg;
+	u32 short_test_status_reg;
+	u32 short_test_result_reg;
+	u32 drv_drv_selfcode_reg;
+	u32 sen_sen_selfcode_reg;
+	u32 drv_sen_selfcode_reg;
+	u32 diffcode_data_reg;
+	u16 short_test_dump_num;
+	u16 dft_short_threshold;
+	u16 short_diffcode_threshold;
+};
+
+static struct ts_short_test_info params_brb = {
+	MAX_DRV_NUM_BRB,
+	MAX_SEN_NUM_BRB,
+	brl_b_drv_map,
+	brl_b_sen_map,
+	SHORT_TEST_TIME_REG_BRB,
+	SHORT_TEST_STATUS_REG_BRB,
+	SHORT_TEST_RESULT_REG_BRB,
+	DRV_DRV_SELFCODE_REG_BRB,
+	SEN_SEN_SELFCODE_REG_BRB,
+	DRV_SEN_SELFCODE_REG_BRB,
+	DIFF_CODE_DATA_REG_BRB,
+	DFT_ADC_DUMP_NUM_BRB,
+	DFT_SHORT_THRESHOLD_BRB,
+	DFT_DIFFCODE_SHORT_THRESHOLD_BRB,
+};
+
+static struct ts_short_test_info params_brd = {
+	MAX_DRV_NUM_BRD,
+	MAX_SEN_NUM_BRD,
+	brl_d_drv_map,
+	brl_d_sen_map,
+	SHORT_TEST_TIME_REG_BRD,
+	SHORT_TEST_STATUS_REG_BRD,
+	SHORT_TEST_RESULT_REG_BRD,
+	DRV_DRV_SELFCODE_REG_BRD,
+	SEN_SEN_SELFCODE_REG_BRD,
+	DRV_SEN_SELFCODE_REG_BRD,
+	DIFF_CODE_DATA_REG_BRD,
+	DFT_ADC_DUMP_NUM_BRD,
+	DFT_SHORT_THRESHOLD_BRD,
+	DFT_DIFFCODE_SHORT_THRESHOLD_BRD,
+};
+
+static struct ts_short_test_info params_not = {
+	MAX_DRV_NUM_NOT,
+	MAX_SEN_NUM_NOT,
+	not_drv_map,
+	not_sen_map,
+	SHORT_TEST_TIME_REG_NOT,
+	SHORT_TEST_STATUS_REG_NOT,
+	SHORT_TEST_RESULT_REG_NOT,
+	DRV_DRV_SELFCODE_REG_NOT,
+	SEN_SEN_SELFCODE_REG_NOT,
+	DRV_SEN_SELFCODE_REG_NOT,
+	DIFF_CODE_DATA_REG_NOT,
+	0,
+	0,
+	0,
+};
 
 struct ts_short_res {
 	u8 short_num;
@@ -210,9 +401,46 @@ struct goodix_ts_test {
 	struct ts_test_rawdata *deltadata;
 	struct ts_test_rawdata *noisedata;
 	struct ts_test_self_rawdata selfrawdata;
+	struct ts_short_test_info *params_info;
 	struct ts_short_res short_res;
 };
 static struct goodix_ts_test *ts_test;
+
+static int cal_cha_to_cha_res(int v1, int v2)
+{
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_A)
+		return (v1 - v2) * 63 / v2;
+	else if (cd->bus->ic_type == IC_TYPE_BERLIN_B)
+		return (v1 - v2) * 74 / v2 + 20;
+	else if (cd->bus->ic_type == IC_TYPE_BERLIN_D)
+		return (v1 / v2 - 1) * 70 + 59;
+	else
+		return (v1 / v2 - 1) * 55 + 45;
+}
+
+static int cal_cha_to_avdd_res(int v1, int v2)
+{
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_A)
+		return 64 * (2 * v2 - 25) * 40 / v1 - 40;
+	else if (cd->bus->ic_type == IC_TYPE_BERLIN_B)
+		return 64 * (2 * v2 - 25) * 99 / v1 - 60;
+	else if (cd->bus->ic_type == IC_TYPE_BERLIN_D)
+		return 64 * (2 * v2 - 25) * 93 / v1 - 20;
+	else
+		return 64 * (2 * v2 - 25) * 76 / v1 - 15;
+}
+
+static int cal_cha_to_gnd_res(int v)
+{
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_A)
+		return 64148 / v - 40;
+	else if (cd->bus->ic_type == IC_TYPE_BERLIN_B)
+		return 150500 / v - 60;
+	else if (cd->bus->ic_type == IC_TYPE_BERLIN_D)
+		return 145000 / v - 15;
+	else
+		return 120000 / v - 16;
+}
 
 static int malloc_test_resource(void)
 {
@@ -249,26 +477,17 @@ static void release_test_resource(void)
 #define CHN_VDD 0xFF
 #define CHN_GND 0x7F
 #define DRV_CHANNEL_FLAG 0x80
-#define SHORT_TEST_TIME_REG_NOT 0x1479E
-#define SHORT_TEST_STATUS_REG_NOT 0x13400
-#define SHORT_TEST_RESULT_REG_NOT 0x13408
-#define DRV_DRV_SELFCODE_REG_NOT 0x13446
-#define SEN_SEN_SELFCODE_REG_NOT 0x136EE
-#define DRV_SEN_SELFCODE_REG_NOT 0x14152
-#define DIFF_CODE_DATA_REG_NOT 0x14734
-#define CAL_CHAN_TO_CHAN_RES(v1, v2) (v1 / v2 - 1) * 55 + 45
-#define CAL_CHAN_TO_AVDD_RES(v1, v2) 64 * (2 * v2 - 25) * 76 / v1 - 15
-#define CAL_CHAN_TO_GND_RES(v) 120000 / v - 16
 static u32 map_die2pin(u32 chn_num)
 {
 	int i = 0;
 	u32 res = 255;
 
 	if (chn_num & DRV_CHANNEL_FLAG)
-		chn_num = (chn_num & ~DRV_CHANNEL_FLAG) + MAX_SEN_NUM;
+		chn_num = (chn_num & ~DRV_CHANNEL_FLAG) +
+			  ts_test->params_info->max_sen_num;
 
-	for (i = 0; i < MAX_SEN_NUM; i++) {
-		if (not_sen_map[i] == chn_num) {
+	for (i = 0; i < ts_test->params_info->max_sen_num; i++) {
+		if (ts_test->params_info->sen_map[i] == chn_num) {
 			res = i;
 			break;
 		}
@@ -277,13 +496,13 @@ static u32 map_die2pin(u32 chn_num)
 	if (res != 255)
 		return res;
 	/* if cannot find in SenMap try find in DrvMap */
-	for (i = 0; i < MAX_DRV_NUM; i++) {
-		if (not_drv_map[i] == chn_num) {
+	for (i = 0; i < ts_test->params_info->max_drv_num; i++) {
+		if (ts_test->params_info->drv_map[i] == chn_num) {
 			res = i;
 			break;
 		}
 	}
-	if (i >= MAX_DRV_NUM)
+	if (i >= ts_test->params_info->max_drv_num)
 		ts_err("Faild found corrresponding channel num:%d", chn_num);
 	else
 		res |= DRV_CHANNEL_FLAG;
@@ -335,9 +554,9 @@ static int gdix_check_tx_tx_shortcircut(u8 short_ch_num)
 	u16 adc_signal = 0;
 	u8 master_pin_num, slave_pin_num;
 	u8 *data_buf;
-	u32 data_reg = DRV_DRV_SELFCODE_REG_NOT;
-	int max_drv_num = MAX_DRV_NUM;
-	int max_sen_num = MAX_SEN_NUM;
+	u32 data_reg = ts_test->params_info->drv_drv_selfcode_reg;
+	int max_drv_num = ts_test->params_info->max_drv_num;
+	int max_sen_num = ts_test->params_info->max_sen_num;
 	u16 self_capdata, short_die_num = 0;
 
 	size = 4 + max_drv_num * 2 + 2;
@@ -384,8 +603,8 @@ static int gdix_check_tx_tx_shortcircut(u8 short_ch_num)
 			if (adc_signal < ts_test->short_threshold)
 				continue;
 
-			short_r =
-				CAL_CHAN_TO_CHAN_RES(self_capdata, adc_signal);
+			short_r = (u32)cal_cha_to_cha_res(
+				self_capdata, adc_signal);
 			if (short_r < r_threshold) {
 				master_pin_num = map_die2pin(
 					short_die_num + max_sen_num);
@@ -426,8 +645,8 @@ static int gdix_check_rx_rx_shortcircut(u8 short_ch_num)
 	u16 adc_signal = 0;
 	u8 master_pin_num, slave_pin_num;
 	u8 *data_buf;
-	u32 data_reg = SEN_SEN_SELFCODE_REG_NOT;
-	int max_sen_num = MAX_SEN_NUM;
+	u32 data_reg = ts_test->params_info->sen_sen_selfcode_reg;
+	int max_sen_num = ts_test->params_info->max_sen_num;
 	u16 self_capdata, short_die_num = 0;
 
 	size = 4 + max_sen_num * 2 + 2;
@@ -472,8 +691,8 @@ static int gdix_check_rx_rx_shortcircut(u8 short_ch_num)
 			if (adc_signal < ts_test->short_threshold)
 				continue;
 
-			short_r =
-				CAL_CHAN_TO_CHAN_RES(self_capdata, adc_signal);
+			short_r = (u32)cal_cha_to_cha_res(
+				self_capdata, adc_signal);
 			if (short_r < r_threshold) {
 				master_pin_num = map_die2pin(short_die_num);
 				slave_pin_num = map_die2pin(j);
@@ -513,9 +732,9 @@ static int gdix_check_tx_rx_shortcircut(u8 short_ch_num)
 	u16 adc_signal = 0;
 	u8 master_pin_num, slave_pin_num;
 	u8 *data_buf = NULL;
-	u32 data_reg = DRV_SEN_SELFCODE_REG_NOT;
-	int max_drv_num = MAX_DRV_NUM;
-	int max_sen_num = MAX_SEN_NUM;
+	u32 data_reg = ts_test->params_info->drv_sen_selfcode_reg;
+	int max_drv_num = ts_test->params_info->max_drv_num;
+	int max_sen_num = ts_test->params_info->max_sen_num;
 	u16 self_capdata, short_die_num = 0;
 
 	size = 4 + max_drv_num * 2 + 2;
@@ -560,8 +779,8 @@ static int gdix_check_tx_rx_shortcircut(u8 short_ch_num)
 			if (adc_signal < ts_test->short_threshold)
 				continue;
 
-			short_r =
-				CAL_CHAN_TO_CHAN_RES(self_capdata, adc_signal);
+			short_r = (u32)cal_cha_to_cha_res(
+				self_capdata, adc_signal);
 			if (short_r < r_threshold) {
 				master_pin_num = map_die2pin(short_die_num);
 				slave_pin_num = map_die2pin(j + max_sen_num);
@@ -600,8 +819,8 @@ static int gdix_check_resistance_to_gnd(u16 adc_signal, u32 pos)
 	u16 chn_id_tmp = 0;
 	u8 pin_num = 0;
 	unsigned short short_type;
-	int max_drv_num = MAX_DRV_NUM;
-	int max_sen_num = MAX_SEN_NUM;
+	int max_drv_num = ts_test->params_info->max_drv_num;
+	int max_sen_num = ts_test->params_info->max_sen_num;
 
 	avdd_value = ts_test->avdd_value;
 	short_type = adc_signal & 0x8000;
@@ -611,10 +830,10 @@ static int gdix_check_resistance_to_gnd(u16 adc_signal, u32 pos)
 
 	if (short_type == 0) {
 		/* short to GND */
-		r = CAL_CHAN_TO_GND_RES(adc_signal);
+		r = cal_cha_to_gnd_res(adc_signal);
 	} else {
 		/* short to VDD */
-		r = CAL_CHAN_TO_AVDD_RES(adc_signal, avdd_value);
+		r = cal_cha_to_avdd_res(adc_signal, avdd_value);
 	}
 
 	if (pos < max_drv_num)
@@ -648,10 +867,10 @@ static int gdix_check_gndvdd_shortcircut(void)
 	int ret = 0, err = 0;
 	int size = 0, i = 0;
 	u16 adc_signal = 0;
-	u32 data_reg = DIFF_CODE_DATA_REG_NOT;
+	u32 data_reg = ts_test->params_info->diffcode_data_reg;
 	u8 *data_buf = NULL;
-	int max_drv_num = MAX_DRV_NUM;
-	int max_sen_num = MAX_SEN_NUM;
+	int max_drv_num = ts_test->params_info->max_drv_num;
+	int max_sen_num = ts_test->params_info->max_sen_num;
 
 	size = (max_drv_num + max_sen_num) * 2 + 2;
 	data_buf = kzalloc(size, GFP_KERNEL);
@@ -688,22 +907,33 @@ err_out:
 	return err;
 }
 
+#define NOTT_CHECKSUM_LEN 54
+#define BRLD_CHECKSUM_LEN 62
+#define BRLB_CHECKSUM_LEN 129
 static int goodix_shortcircut_analysis(void)
 {
 	int ret;
 	int err = 0;
-	u8 temp_buf[62];
+	u8 temp_buf[140];
 	test_result_t test_result;
+	int checksum_len = 0;
 
-	ret = cd->hw_ops->read(
-		cd, SHORT_TEST_RESULT_REG_NOT, temp_buf, sizeof(temp_buf));
+	ret = cd->hw_ops->read(cd, ts_test->params_info->short_test_result_reg,
+		temp_buf, sizeof(temp_buf));
 	if (ret < 0) {
 		ts_err("Read TEST_RESULT_REG failed");
 		return ret;
 	}
 
-	if (checksum_cmp(&temp_buf[sizeof(test_result)],
-		    sizeof(temp_buf) - sizeof(test_result),
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+		checksum_len = BRLB_CHECKSUM_LEN;
+	} else if (cd->bus->ic_type == IC_TYPE_BERLIN_D) {
+		checksum_len = BRLD_CHECKSUM_LEN;
+	} else if (cd->bus->ic_type == IC_TYPE_NOTTINGHAM) {
+		checksum_len = NOTT_CHECKSUM_LEN;
+	}
+
+	if (checksum_cmp(&temp_buf[sizeof(test_result)], checksum_len,
 		    CHECKSUM_MODE_U8_LE)) {
 		ts_err("short result checksum err");
 		return -EINVAL;
@@ -792,8 +1022,8 @@ static int goodix_shortcircut_test(void)
 	}
 
 	/* get short test time */
-	ret = cd->hw_ops->read(
-		cd, SHORT_TEST_TIME_REG_NOT, (u8 *)&test_time, 2);
+	ret = cd->hw_ops->read(cd, ts_test->params_info->short_test_time_reg,
+		(u8 *)&test_time, 2);
 	if (ret < 0) {
 		ts_err("Failed to get test_time, default %dms",
 			DEFAULT_TEST_TIME_MS);
@@ -815,8 +1045,9 @@ static int goodix_shortcircut_test(void)
 	msleep(test_time);
 	retry = 50;
 	while (retry--) {
-		ret = cd->hw_ops->read(
-			cd, SHORT_TEST_STATUS_REG_NOT, &status, 1);
+		ret = cd->hw_ops->read(cd,
+			ts_test->params_info->short_test_status_reg, &status,
+			1);
 		if (!ret && status == SHORT_TEST_FINISH_FLAG)
 			break;
 		msleep(50);
@@ -1489,6 +1720,8 @@ static int goodix_obtain_testlimits(void)
 	int rx = cd->ic_info.parm.sen_num;
 	char limit_file[100] = { 0 };
 	char *temp_buf = NULL;
+	char *raw_limit_min = CSV_TP_SPECIAL_RAW_MIN;
+	char *raw_limit_max = CSV_TP_SPECIAL_RAW_MAX;
 	s16 data_buf[7];
 	int ret;
 
@@ -1515,16 +1748,21 @@ static int goodix_obtain_testlimits(void)
 	memcpy(temp_buf, firmware->data, firmware->size);
 
 	if (ts_test->item[GTP_CAP_TEST]) {
+		if (ts_test->freq > 0) {
+			raw_limit_min = CSV_TP_SPECIAL_FREQ_RAW_MIN;
+			raw_limit_max = CSV_IP_SPECIAL_FREQ_RAW_MAX;
+		}
+
 		/* obtain mutual_raw min */
-		ret = parse_csvfile(temp_buf, firmware->size,
-			CSV_TP_SPECIAL_RAW_MIN, ts_test->min_limits, rx, tx);
+		ret = parse_csvfile(temp_buf, firmware->size, raw_limit_min,
+			ts_test->min_limits, rx, tx);
 		if (ret < 0) {
 			ts_err("Failed get min_limits");
 			goto exit_free;
 		}
 		/* obtain mutual_raw max */
-		ret = parse_csvfile(temp_buf, firmware->size,
-			CSV_TP_SPECIAL_RAW_MAX, ts_test->max_limits, rx, tx);
+		ret = parse_csvfile(temp_buf, firmware->size, raw_limit_max,
+			ts_test->max_limits, rx, tx);
 		if (ret < 0) {
 			ts_err("Failed get max_limits");
 			goto exit_free;
@@ -1583,6 +1821,13 @@ static int goodix_obtain_testlimits(void)
 		ts_test->r_drv_gnd_threshold = data_buf[4];
 		ts_test->r_sen_gnd_threshold = data_buf[5];
 		ts_test->avdd_value = data_buf[6];
+
+		if (cd->bus->ic_type == IC_TYPE_BERLIN_B)
+			ts_test->params_info = &params_brb;
+		else if (cd->bus->ic_type == IC_TYPE_BERLIN_D)
+			ts_test->params_info = &params_brd;
+		else if (cd->bus->ic_type == IC_TYPE_NOTTINGHAM)
+			ts_test->params_info = &params_not;
 	}
 
 exit_free:
@@ -1955,12 +2200,16 @@ static void goodix_auto_noise_test(u16 cnt, int threshold)
 	u32 raw_addr;
 	int tx = cd->ic_info.parm.drv_num;
 	int rx = cd->ic_info.parm.sen_num;
-	s16 tmp_buf[MAX_DRV_NUM * MAX_SEN_NUM];
+	s16 *tmp_buf;
 	int tmp_val;
 	u8 status;
 	int retry = 10;
 	int err_cnt = 0;
 	int i;
+
+	tmp_buf = kcalloc(MAX_DRV_NUM * MAX_SEN_NUM, 2, GFP_KERNEL);
+	if (tmp_buf == NULL)
+		return;
 
 	raw_addr = cd->ic_info.misc.frame_data_addr +
 		   cd->ic_info.misc.frame_data_head_len +
@@ -2033,6 +2282,7 @@ static void goodix_auto_noise_test(u16 cnt, int threshold)
 		index += sprintf(&rbuf[index], "Result: PASS\n");
 
 exit:
+	kfree(tmp_buf);
 	cd->hw_ops->reset(cd, 100);
 	cd->hw_ops->irq_enable(cd, true);
 	goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
@@ -2598,6 +2848,67 @@ static void goodix_set_heatmap(int val)
 	}
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 	cd->hw_ops->irq_enable(cd, true);
+}
+
+static void goodix_get_self_compensation(void)
+{
+	u8 *cfg;
+	int len;
+	int cfg_num;
+	int sub_cfg_index;
+	int sub_cfg_len;
+	int tx = cd->ic_info.parm.drv_num;
+	int rx = cd->ic_info.parm.sen_num;
+	s16 val;
+	int i, j;
+
+	cfg = kzalloc(GOODIX_CFG_MAX_SIZE, GFP_KERNEL);
+	if (cfg == NULL)
+		return;
+
+	len = cd->hw_ops->read_config(cd, cfg, GOODIX_CFG_MAX_SIZE);
+	if (len < 0) {
+		ts_err("read config failed");
+		return;
+	}
+
+	cfg_num = cfg[61];
+	cfg += 64;
+	for (i = 0; i < cfg_num; i++) {
+		sub_cfg_len = cfg[0] - 2;
+		sub_cfg_index = cfg[1];
+		if (sub_cfg_index == 13) { // TX self cancel
+			ts_info("sub_cfg_len:%d", sub_cfg_len);
+			index += sprintf(&rbuf[index], "Tx:");
+			for (j = 0; j < tx; j++) {
+				val = le16_to_cpup((__le16 *)&cfg[2 + j * 4]) +
+				      le16_to_cpup((__le16 *)&cfg[4 + j * 4]);
+				index += sprintf(&rbuf[index], "%d,", val);
+			}
+			index += sprintf(&rbuf[index], "\n");
+		} else if (sub_cfg_index == 14) { // RX self cancel
+			ts_info("sub_cfg_len:%d", sub_cfg_len);
+			index += sprintf(&rbuf[index], "Rx:");
+			for (j = 0; j < rx; j++) {
+				val = le16_to_cpup((__le16 *)&cfg[2 + j * 2]);
+				index += sprintf(&rbuf[index], "%d,", val);
+			}
+			index += sprintf(&rbuf[index], "\n");
+		}
+		cfg += (sub_cfg_len + 2);
+	}
+}
+
+static void goodix_set_report_rate(int rate)
+{
+	struct goodix_ts_cmd temp_cmd;
+
+	index = sprintf(rbuf, "set report rate %d\n", rate);
+	ts_info("set report rate %d", rate);
+	temp_cmd.len = 5;
+	temp_cmd.cmd = 0x9D;
+	temp_cmd.data[0] = rate;
+	cd->hw_ops->send_cmd(cd, &temp_cmd);
 }
 
 static ssize_t driver_test_write(
@@ -3277,6 +3588,29 @@ static ssize_t driver_test_write(
 			goto exit;
 		}
 		goodix_set_heatmap(cmd_val);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_GET_SELF_COMPEN, strlen(CMD_GET_SELF_COMPEN))) {
+		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
+		goodix_get_self_compensation();
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_SET_REPORT_RATE, strlen(CMD_SET_REPORT_RATE))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_REPORT_RATE);
+			goto exit;
+		}
+		if (kstrtos32(p, 10, &cmd_val)) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_REPORT_RATE);
+			goto exit;
+		}
+		goodix_set_report_rate(cmd_val);
 		goto exit;
 	}
 

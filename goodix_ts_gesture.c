@@ -225,7 +225,8 @@ static int gsx_gesture_ist(
 {
 	struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
 	struct goodix_ts_event gs_event = { 0 };
-	int fodx, fody, overlay_area;
+	int coor_x, coor_y, coor_size, coor_press;
+	int major, minor, orientation;
 	int ret;
 
 	if (atomic_read(&cd->suspended) == 0 || cd->gesture_type == 0)
@@ -247,15 +248,43 @@ static int gsx_gesture_ist(
 	if (gs_event.event_type & EVENT_STATUS)
 		goodix_ts_report_status(cd, &gs_event);
 
+	coor_x = le16_to_cpup((__le16 *)gs_event.gesture_data.data);
+	coor_y = le16_to_cpup((__le16 *)(gs_event.gesture_data.data + 2));
+	coor_size = le16_to_cpup((__le16 *)(gs_event.gesture_data.data + 4));
+	coor_press = gs_event.gesture_data.data[6];
+	major = le16_to_cpup((__le16 *)(gs_event.gesture_data.data + 7));
+	minor = le16_to_cpup((__le16 *)(gs_event.gesture_data.data + 9));
+	orientation = (s8)gs_event.gesture_data.data[11];
+
 	switch (gs_event.gesture_data.gesture_type) {
 	case GOODIX_GESTURE_SINGLE_TAP:
 		if (cd->gesture_type & GESTURE_SINGLE_TAP) {
 			ts_info("get SINGLE-TAP gesture");
+			ts_debug(
+				"fodx:%d fody:%d size:%d press:%d maj:%d min:%d ori:%d",
+				coor_x, coor_y, coor_size, coor_press, major,
+				minor, orientation);
+			input_report_key(cd->input_dev, BTN_TOUCH, 1);
+			input_mt_slot(cd->input_dev, 0);
+			input_mt_report_slot_state(
+				cd->input_dev, MT_TOOL_FINGER, 1);
+			input_report_abs(
+				cd->input_dev, ABS_MT_POSITION_X, coor_x);
+			input_report_abs(
+				cd->input_dev, ABS_MT_POSITION_Y, coor_y);
+			input_report_abs(
+				cd->input_dev, ABS_MT_PRESSURE, coor_press);
+			input_report_abs(
+				cd->input_dev, ABS_MT_TOUCH_MAJOR, major);
+			input_report_abs(
+				cd->input_dev, ABS_MT_TOUCH_MINOR, minor);
 			input_report_key(cd->input_dev, KEY_WAKEUP, 1);
-			// input_report_key(cd->input_dev, KEY_GOTO, 1);
 			input_sync(cd->input_dev);
+			input_report_key(cd->input_dev, BTN_TOUCH, 0);
+			input_mt_slot(cd->input_dev, 0);
+			input_mt_report_slot_state(
+				cd->input_dev, MT_TOOL_FINGER, 0);
 			input_report_key(cd->input_dev, KEY_WAKEUP, 0);
-			// input_report_key(cd->input_dev, KEY_GOTO, 0);
 			input_sync(cd->input_dev);
 		} else {
 			ts_debug("not enable SINGLE-TAP");
@@ -275,20 +304,24 @@ static int gsx_gesture_ist(
 	case GOODIX_GESTURE_FOD_DOWN:
 		if (cd->gesture_type & GESTURE_FOD_PRESS) {
 			ts_info("get FOD-DOWN gesture");
-			fodx = le16_to_cpup((__le16 *)gs_event.gesture_data.data);
-			fody = le16_to_cpup(
-				(__le16 *)(gs_event.gesture_data.data + 2));
-			overlay_area = gs_event.gesture_data.data[4];
-			ts_debug("fodx:%d fody:%d overlay_area:%d", fodx, fody,
-				overlay_area);
+			ts_debug(
+				"fodx:%d fody:%d size:%d press:%d maj:%d min:%d ori:%d",
+				coor_x, coor_y, coor_size, coor_press, major,
+				minor, orientation);
 			input_report_key(cd->input_dev, BTN_TOUCH, 1);
 			input_mt_slot(cd->input_dev, 0);
 			input_mt_report_slot_state(
 				cd->input_dev, MT_TOOL_FINGER, 1);
 			input_report_abs(
-				cd->input_dev, ABS_MT_POSITION_X, fodx);
+				cd->input_dev, ABS_MT_POSITION_X, coor_x);
 			input_report_abs(
-				cd->input_dev, ABS_MT_POSITION_Y, fody);
+				cd->input_dev, ABS_MT_POSITION_Y, coor_y);
+			input_report_abs(
+				cd->input_dev, ABS_MT_PRESSURE, coor_press);
+			input_report_abs(
+				cd->input_dev, ABS_MT_TOUCH_MAJOR, major);
+			input_report_abs(
+				cd->input_dev, ABS_MT_TOUCH_MINOR, minor);
 			input_sync(cd->input_dev);
 		} else {
 			ts_debug("not enable FOD-DOWN");
@@ -297,9 +330,6 @@ static int gsx_gesture_ist(
 	case GOODIX_GESTURE_FOD_UP:
 		if (cd->gesture_type & GESTURE_FOD_PRESS) {
 			ts_info("get FOD-UP gesture");
-			// fodx = le16_to_cpup((__le16 *)gs_event.gesture_data);
-			// fody = le16_to_cpup((__le16 *)(gs_event.gesture_data
-			// + 2)); overlay_area = gs_event.gesture_data[4];
 			input_report_key(cd->input_dev, BTN_TOUCH, 0);
 			input_mt_slot(cd->input_dev, 0);
 			input_mt_report_slot_state(
