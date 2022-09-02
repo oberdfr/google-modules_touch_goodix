@@ -1775,7 +1775,8 @@ static int goodix_ts_irq_setup(struct goodix_ts_core *core_data)
 	}
 
 	ts_info("IRQ:%u,flags:%d", core_data->irq, (int)ts_bdata->irq_flags);
-	ret = devm_request_threaded_irq(&core_data->pdev->dev, core_data->irq,
+	ret = goog_devm_request_threaded_irq(core_data->gti,
+		&core_data->pdev->dev, core_data->irq,
 		goodix_ts_isr, goodix_ts_threadirq_func,
 		ts_bdata->irq_flags | IRQF_ONESHOT, GOODIX_CORE_DRIVER_NAME,
 		core_data);
