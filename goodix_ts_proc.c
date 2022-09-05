@@ -2510,20 +2510,29 @@ static void goodix_set_continue_mode(u8 val)
 static void goodix_read_config(void)
 {
 	int ret;
-	u8 cfg_buf[2500];
+	u8* cfg_buf;
 	u32 cfg_id;
 	u8 cfg_ver;
 
-	ret = cd->hw_ops->read_config(cd, cfg_buf, sizeof(cfg_buf));
+	cfg_buf = kzalloc(GOODIX_CFG_MAX_SIZE, GFP_KERNEL);
+	if (cfg_buf == NULL) {
+		ts_err("failed to alloc cfg buffer");
+		return;
+	}
+
+	ret = cd->hw_ops->read_config(cd, cfg_buf, GOODIX_CFG_MAX_SIZE);
 	if (ret < 0) {
 		ts_err("read config failed");
-		return;
+		goto exit;
 	}
 
 	cfg_id = le32_to_cpup((__le32 *)&cfg_buf[30]);
 	cfg_ver = cfg_buf[34];
 	index = sprintf(
 		rbuf, "config_id:0x%X config_ver:0x%02X\n", cfg_id, cfg_ver);
+
+exit:
+	kfree(cfg_buf);
 }
 
 static void goodix_get_fw_status(void)
@@ -2854,6 +2863,7 @@ static void goodix_set_heatmap(int val)
 static void goodix_get_self_compensation(void)
 {
 	u8 *cfg;
+	u8 *cfg_buf;
 	int len;
 	int cfg_num;
 	int sub_cfg_index;
@@ -2863,16 +2873,19 @@ static void goodix_get_self_compensation(void)
 	s16 val;
 	int i, j;
 
-	cfg = kzalloc(GOODIX_CFG_MAX_SIZE, GFP_KERNEL);
-	if (cfg == NULL)
-		return;
-
-	len = cd->hw_ops->read_config(cd, cfg, GOODIX_CFG_MAX_SIZE);
-	if (len < 0) {
-		ts_err("read config failed");
+	cfg_buf = kzalloc(GOODIX_CFG_MAX_SIZE, GFP_KERNEL);
+	if (cfg_buf == NULL) {
+		ts_err("failed to alloc cfg buffer");
 		return;
 	}
 
+	len = cd->hw_ops->read_config(cd, cfg_buf, GOODIX_CFG_MAX_SIZE);
+	if (len < 0) {
+		ts_err("read config failed");
+		goto exit;
+	}
+
+	cfg = cfg_buf;
 	cfg_num = cfg[61];
 	cfg += 64;
 	for (i = 0; i < cfg_num; i++) {
@@ -2898,6 +2911,8 @@ static void goodix_get_self_compensation(void)
 		}
 		cfg += (sub_cfg_len + 2);
 	}
+exit:
+	kfree(cfg_buf);
 }
 
 static void goodix_set_report_rate(int rate)
