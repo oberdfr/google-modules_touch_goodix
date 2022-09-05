@@ -50,7 +50,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.0.13"
+#define GOODIX_DRIVER_VERSION "v1.1.1"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -267,6 +267,10 @@ struct goodix_ic_info_misc { /* other data */
 	u16 stylus_rawdata_len;
 	u32 noise_data_addr;
 	u32 esd_addr;
+	u32 auto_scan_cmd_addr;
+	u32 auto_scan_info_addr;
+	u32 self_tx_cfg_addr;
+	u32 self_rx_cfg_addr;
 };
 
 struct goodix_ic_info {

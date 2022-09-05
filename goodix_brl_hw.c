@@ -828,6 +828,10 @@ static int convert_ic_info(struct goodix_ic_info *info, const u8 *data)
 	LE16_TO_CPU(misc->stylus_rawdata_len);
 	LE32_TO_CPU(misc->noise_data_addr);
 	LE32_TO_CPU(misc->esd_addr);
+	LE32_TO_CPU(misc->auto_scan_cmd_addr);
+	LE32_TO_CPU(misc->auto_scan_info_addr);
+	LE32_TO_CPU(misc->self_tx_cfg_addr);
+	LE32_TO_CPU(misc->self_rx_cfg_addr);
 
 	return 0;
 }
@@ -896,6 +900,10 @@ static void print_ic_info(struct goodix_ic_info *ic_info)
 		misc->stylus_rawdata_addr, misc->stylus_rawdata_len);
 	ts_info("esd_addr:                      0x%04X", misc->esd_addr);
 	ts_info("frame_data_addr:               0x%04X", misc->frame_data_addr);
+	ts_info("self_tx_cfg_addr:              0x%04x",
+		misc->self_tx_cfg_addr);
+	ts_info("self_rx_cfg_addr:              0x%04x",
+		misc->self_rx_cfg_addr);
 }
 
 static int brl_get_ic_info(
@@ -986,7 +994,7 @@ static int brl_esd_check(struct goodix_ts_core *cd)
 		return ret;
 	}
 
-	if (esd_value == GOODIX_ESD_TICK_WRITE_DATA) {
+	if (esd_value != 0xFF) {
 		ts_err("esd check failed, 0x%x", esd_value);
 		return -EINVAL;
 	}
@@ -1126,12 +1134,10 @@ static int goodix_touch_handler(struct goodix_ts_core *cd,
 		point_type = event_data->data[0] & 0x0F;
 		if (point_type == POINT_TYPE_STYLUS ||
 			point_type == POINT_TYPE_STYLUS_HOVER) {
-			ret = checksum_cmp(event_data->data,
-				BYTES_PER_POINT * 2 + 2, CHECKSUM_MODE_U8_LE);
+			ret = checksum_cmp(event_data->data, 16 + 2, CHECKSUM_MODE_U8_LE);
 			if (ret) {
 				ts_debug("touch data checksum error");
-				ts_debug("data:%*ph", BYTES_PER_POINT * 2 + 2,
-					event_data->data);
+				ts_debug("data:%*ph", 16 + 2, event_data->data);
 				return -EINVAL;
 			}
 		} else {
@@ -1218,6 +1224,7 @@ static int brl_event_handler(
 		    CHECKSUM_MODE_U8_LE)) {
 		ts_debug("touch head checksum err[%*ph]", IRQ_EVENT_HEAD_LEN,
 			event_data);
+		hw_ops->after_event_handler(cd);
 		return -EINVAL;
 	}
 
