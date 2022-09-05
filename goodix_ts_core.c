@@ -2111,7 +2111,7 @@ static void goodix_ts_esd_work(struct work_struct *work)
 	if (ts_esd->irq_status)
 		goto exit;
 
-	if (!atomic_read(&ts_esd->esd_on))
+	if (!atomic_read(&ts_esd->esd_on) || atomic_read(&cd->suspended))
 		return;
 
 	if (!hw_ops->esd_check)
@@ -2120,9 +2120,22 @@ static void goodix_ts_esd_work(struct work_struct *work)
 	ret = hw_ops->esd_check(cd);
 	if (ret) {
 		ts_err("esd check failed");
-		goodix_ts_power_off(cd);
+		gpio_direction_output(cd->board_data.reset_gpio, 0);
+		if (cd->iovdd)
+			ret = regulator_disable(cd->iovdd);
+		if (cd->avdd)
+			ret = regulator_disable(cd->avdd);
+
 		usleep_range(5000, 5100);
-		goodix_ts_power_on(cd);
+
+		if (cd->iovdd) {
+			ret = regulator_enable(cd->iovdd);
+			usleep_range(3000, 3100);
+		}
+		if (cd->avdd)
+			ret = regulator_enable(cd->avdd);
+		usleep_range(15000, 15100);
+		gpio_direction_output(cd->board_data.reset_gpio, 1);
 	}
 
 exit:
