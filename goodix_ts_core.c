@@ -1263,6 +1263,10 @@ static int goodix_parse_dt(
 {
 	const char *name_tmp;
 	int r;
+	int index;
+	struct of_phandle_args panelmap;
+	struct drm_panel *panel = NULL;
+	const char *name;
 
 	if (!board_data) {
 		ts_err("invalid board data");
@@ -1336,30 +1340,66 @@ static int goodix_parse_dt(
 				sizeof(board_data->iovdd_name));
 	}
 
-	/* get firmware file name */
-	r = of_property_read_string(node, "goodix,firmware-name", &name_tmp);
-	if (!r) {
-		ts_info("firmware name from dt: %s", name_tmp);
-		strncpy(board_data->fw_name, name_tmp,
-			sizeof(board_data->fw_name));
-	} else {
-		ts_info("can't find firmware name, use default: %s",
-			TS_DEFAULT_FIRMWARE);
-		strncpy(board_data->fw_name, TS_DEFAULT_FIRMWARE,
-			sizeof(board_data->fw_name));
-	}
+	if (of_property_read_bool(node, "goodix,panel_map")) {
+		for (index = 0;; index++) {
+			r = of_parse_phandle_with_fixed_args(
+				node, "goodix,panel_map", 0, index, &panelmap);
+			if (r)
+				return -EPROBE_DEFER;
+			panel = of_drm_find_panel(panelmap.np);
+			of_node_put(panelmap.np);
+			if (!IS_ERR_OR_NULL(panel)) {
+				r = of_property_read_string_index(node,
+					"goodix,firmware_names", panelmap.args[0], &name);
+				if (r < 0)
+					name = TS_DEFAULT_FIRMWARE;
 
-	/* get config file name */
-	r = of_property_read_string(node, "goodix,config-name", &name_tmp);
-	if (!r) {
-		ts_info("config name from dt: %s", name_tmp);
-		strncpy(board_data->cfg_bin_name, name_tmp,
-			sizeof(board_data->cfg_bin_name));
+				strncpy(board_data->fw_name, name,
+					sizeof(board_data->fw_name));
+				ts_info("Firmware name %s",
+					board_data->fw_name);
+
+				r = of_property_read_string_index(node,
+					"goodix,config_names", panelmap.args[0], &name);
+				if (r < 0)
+					name = TS_DEFAULT_CFG_BIN;
+
+				strncpy(board_data->cfg_bin_name, name,
+					sizeof(board_data->cfg_bin_name));
+				ts_info("Config name %s",
+					board_data->cfg_bin_name);
+
+				break;
+			}
+		}
 	} else {
-		ts_info("can't find config name, use default: %s",
-			TS_DEFAULT_CFG_BIN);
-		strncpy(board_data->cfg_bin_name, TS_DEFAULT_CFG_BIN,
-			sizeof(board_data->cfg_bin_name));
+		/* get firmware file name */
+		r = of_property_read_string(
+			node, "goodix,firmware-name", &name_tmp);
+		if (!r) {
+			ts_info("firmware name from dt: %s", name_tmp);
+			strncpy(board_data->fw_name, name_tmp,
+				sizeof(board_data->fw_name));
+		} else {
+			ts_info("can't find firmware name, use default: %s",
+				TS_DEFAULT_FIRMWARE);
+			strncpy(board_data->fw_name, TS_DEFAULT_FIRMWARE,
+				sizeof(board_data->fw_name));
+		}
+
+		/* get config file name */
+		r = of_property_read_string(
+			node, "goodix,config-name", &name_tmp);
+		if (!r) {
+			ts_info("config name from dt: %s", name_tmp);
+			strncpy(board_data->cfg_bin_name, name_tmp,
+				sizeof(board_data->cfg_bin_name));
+		} else {
+			ts_info("can't find config name, use default: %s",
+				TS_DEFAULT_CFG_BIN);
+			strncpy(board_data->cfg_bin_name, TS_DEFAULT_CFG_BIN,
+				sizeof(board_data->cfg_bin_name));
+		}
 	}
 
 	/* get xyz resolutions */
