@@ -1581,7 +1581,6 @@ static void goodix_ts_report_finger_goog(
 
 	goog_input_report_key(gti, dev, BTN_TOUCH, touch_num > 0 ? 1 : 0);
 	goog_input_sync(gti, dev);
-	goog_input_process(gti);
 
 	goog_input_unlock(gti);
 
@@ -2332,7 +2331,6 @@ static void goodix_ts_release_connects_goog(struct goodix_ts_core *core_data)
 	}
 	goog_input_report_key(gti, input_dev, BTN_TOUCH, 0);
 	goog_input_sync(gti, input_dev);
-	goog_input_process(gti);
 
 	goog_input_unlock(gti);
 }
