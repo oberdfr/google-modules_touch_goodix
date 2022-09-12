@@ -994,7 +994,7 @@ static int brl_esd_check(struct goodix_ts_core *cd)
 		return ret;
 	}
 
-	if (esd_value == GOODIX_ESD_TICK_WRITE_DATA) {
+	if (esd_value != 0xFF) {
 		ts_err("esd check failed, 0x%x", esd_value);
 		return -EINVAL;
 	}
@@ -1134,12 +1134,10 @@ static int goodix_touch_handler(struct goodix_ts_core *cd,
 		point_type = event_data->data[0] & 0x0F;
 		if (point_type == POINT_TYPE_STYLUS ||
 			point_type == POINT_TYPE_STYLUS_HOVER) {
-			ret = checksum_cmp(event_data->data,
-				BYTES_PER_POINT * 2 + 2, CHECKSUM_MODE_U8_LE);
+			ret = checksum_cmp(event_data->data, 16 + 2, CHECKSUM_MODE_U8_LE);
 			if (ret) {
 				ts_debug("touch data checksum error");
-				ts_debug("data:%*ph", BYTES_PER_POINT * 2 + 2,
-					event_data->data);
+				ts_debug("data:%*ph", 16 + 2, event_data->data);
 				return -EINVAL;
 			}
 		} else {

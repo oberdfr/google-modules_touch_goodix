@@ -47,6 +47,7 @@
 #define CMD_SET_HEATMAP "set_heatmap"
 #define CMD_GET_SELF_COMPEN "get_self_compensation"
 #define CMD_SET_REPORT_RATE "set_report_rate"
+#define CMD_GET_DUMP_LOG "get_dump_log"
 
 char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_SELF_OPEN_TEST, CMD_NOISE_TEST, CMD_AUTO_NOISE_TEST, CMD_SHORT_TEST,
@@ -61,7 +62,7 @@ char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_GET_FW_STATUS, CMD_SET_HIGHSENSE_MODE, CMD_SET_GRIP_DATA,
 	CMD_SET_GRIP_MODE, CMD_SET_PALM_MODE, CMD_SET_NOISE_MODE,
 	CMD_SET_WATER_MODE, CMD_SET_HEATMAP, CMD_GET_SELF_COMPEN,
-	CMD_SET_REPORT_RATE, NULL };
+	CMD_SET_REPORT_RATE, CMD_GET_DUMP_LOG, NULL };
 
 /* test limits keyword */
 #define CSV_TP_SPECIAL_RAW_MIN "special_raw_min"
@@ -2509,20 +2510,29 @@ static void goodix_set_continue_mode(u8 val)
 static void goodix_read_config(void)
 {
 	int ret;
-	u8 cfg_buf[2500];
+	u8* cfg_buf;
 	u32 cfg_id;
 	u8 cfg_ver;
 
-	ret = cd->hw_ops->read_config(cd, cfg_buf, sizeof(cfg_buf));
+	cfg_buf = kzalloc(GOODIX_CFG_MAX_SIZE, GFP_KERNEL);
+	if (cfg_buf == NULL) {
+		ts_err("failed to alloc cfg buffer");
+		return;
+	}
+
+	ret = cd->hw_ops->read_config(cd, cfg_buf, GOODIX_CFG_MAX_SIZE);
 	if (ret < 0) {
 		ts_err("read config failed");
-		return;
+		goto exit;
 	}
 
 	cfg_id = le32_to_cpup((__le32 *)&cfg_buf[30]);
 	cfg_ver = cfg_buf[34];
 	index = sprintf(
 		rbuf, "config_id:0x%X config_ver:0x%02X\n", cfg_id, cfg_ver);
+
+exit:
+	kfree(cfg_buf);
 }
 
 static void goodix_get_fw_status(void)
@@ -2853,6 +2863,7 @@ static void goodix_set_heatmap(int val)
 static void goodix_get_self_compensation(void)
 {
 	u8 *cfg;
+	u8 *cfg_buf;
 	int len;
 	int cfg_num;
 	int sub_cfg_index;
@@ -2862,16 +2873,19 @@ static void goodix_get_self_compensation(void)
 	s16 val;
 	int i, j;
 
-	cfg = kzalloc(GOODIX_CFG_MAX_SIZE, GFP_KERNEL);
-	if (cfg == NULL)
-		return;
-
-	len = cd->hw_ops->read_config(cd, cfg, GOODIX_CFG_MAX_SIZE);
-	if (len < 0) {
-		ts_err("read config failed");
+	cfg_buf = kzalloc(GOODIX_CFG_MAX_SIZE, GFP_KERNEL);
+	if (cfg_buf == NULL) {
+		ts_err("failed to alloc cfg buffer");
 		return;
 	}
 
+	len = cd->hw_ops->read_config(cd, cfg_buf, GOODIX_CFG_MAX_SIZE);
+	if (len < 0) {
+		ts_err("read config failed");
+		goto exit;
+	}
+
+	cfg = cfg_buf;
 	cfg_num = cfg[61];
 	cfg += 64;
 	for (i = 0; i < cfg_num; i++) {
@@ -2897,6 +2911,8 @@ static void goodix_get_self_compensation(void)
 		}
 		cfg += (sub_cfg_len + 2);
 	}
+exit:
+	kfree(cfg_buf);
 }
 
 static void goodix_set_report_rate(int rate)
@@ -2909,6 +2925,42 @@ static void goodix_set_report_rate(int rate)
 	temp_cmd.cmd = 0x9D;
 	temp_cmd.data[0] = rate;
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
+}
+
+#define DUMP_AREA1_ADDR 0x10194
+#define DUMP_AREA1_LEN 132
+#define DUMP_AREA2_ADDR 0x10400
+#define DUMP_AREA2_LEN 596
+#define DUMP_AREA3_ADDR 0x10308
+#define DUMP_AREA3_LEN 64
+static void goodix_get_dump_log(void)
+{
+	u8 buf[600];
+	int i;
+
+	cd->hw_ops->read(cd, DUMP_AREA1_ADDR, buf, DUMP_AREA1_LEN);
+	index += sprintf(&rbuf[index], "0x%04x:\n", DUMP_AREA1_ADDR);
+	for (i = 0; i < DUMP_AREA1_LEN; i++) {
+		index += sprintf(&rbuf[index], "%02x,", buf[i]);
+		if ((i + 1) % 32 == 0)
+			index += sprintf(&rbuf[index], "\n");
+	}
+
+	cd->hw_ops->read(cd, DUMP_AREA2_ADDR, buf, DUMP_AREA2_LEN);
+	index += sprintf(&rbuf[index], "\n0x%04x:\n", DUMP_AREA2_ADDR);
+	for (i = 0; i < DUMP_AREA2_LEN; i++) {
+		index += sprintf(&rbuf[index], "%02x,", buf[i]);
+		if ((i + 1) % 32 == 0)
+			index += sprintf(&rbuf[index], "\n");
+	}
+
+	cd->hw_ops->read(cd, DUMP_AREA3_ADDR, buf, DUMP_AREA3_LEN);
+	index += sprintf(&rbuf[index], "\n0x%04x:\n", DUMP_AREA3_ADDR);
+	for (i = 0; i < DUMP_AREA3_LEN; i++) {
+		index += sprintf(&rbuf[index], "%02x,", buf[i]);
+		if ((i + 1) % 32 == 0)
+			index += sprintf(&rbuf[index], "\n");
+	}
 }
 
 static ssize_t driver_test_write(
@@ -3614,6 +3666,12 @@ static ssize_t driver_test_write(
 			goto exit;
 		}
 		goodix_set_report_rate(cmd_val);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_GET_DUMP_LOG, strlen(CMD_GET_DUMP_LOG))) {
+		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
+		goodix_get_dump_log();
 		goto exit;
 	}
 

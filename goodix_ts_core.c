@@ -1263,6 +1263,10 @@ static int goodix_parse_dt(
 {
 	const char *name_tmp;
 	int r;
+	int index;
+	struct of_phandle_args panelmap;
+	struct drm_panel *panel = NULL;
+	const char *name;
 
 	if (!board_data) {
 		ts_err("invalid board data");
@@ -1336,30 +1340,66 @@ static int goodix_parse_dt(
 				sizeof(board_data->iovdd_name));
 	}
 
-	/* get firmware file name */
-	r = of_property_read_string(node, "goodix,firmware-name", &name_tmp);
-	if (!r) {
-		ts_info("firmware name from dt: %s", name_tmp);
-		strncpy(board_data->fw_name, name_tmp,
-			sizeof(board_data->fw_name));
-	} else {
-		ts_info("can't find firmware name, use default: %s",
-			TS_DEFAULT_FIRMWARE);
-		strncpy(board_data->fw_name, TS_DEFAULT_FIRMWARE,
-			sizeof(board_data->fw_name));
-	}
+	if (of_property_read_bool(node, "goodix,panel_map")) {
+		for (index = 0;; index++) {
+			r = of_parse_phandle_with_fixed_args(
+				node, "goodix,panel_map", 0, index, &panelmap);
+			if (r)
+				return -EPROBE_DEFER;
+			panel = of_drm_find_panel(panelmap.np);
+			of_node_put(panelmap.np);
+			if (!IS_ERR_OR_NULL(panel)) {
+				r = of_property_read_string_index(node,
+					"goodix,firmware_names", panelmap.args[0], &name);
+				if (r < 0)
+					name = TS_DEFAULT_FIRMWARE;
 
-	/* get config file name */
-	r = of_property_read_string(node, "goodix,config-name", &name_tmp);
-	if (!r) {
-		ts_info("config name from dt: %s", name_tmp);
-		strncpy(board_data->cfg_bin_name, name_tmp,
-			sizeof(board_data->cfg_bin_name));
+				strncpy(board_data->fw_name, name,
+					sizeof(board_data->fw_name));
+				ts_info("Firmware name %s",
+					board_data->fw_name);
+
+				r = of_property_read_string_index(node,
+					"goodix,config_names", panelmap.args[0], &name);
+				if (r < 0)
+					name = TS_DEFAULT_CFG_BIN;
+
+				strncpy(board_data->cfg_bin_name, name,
+					sizeof(board_data->cfg_bin_name));
+				ts_info("Config name %s",
+					board_data->cfg_bin_name);
+
+				break;
+			}
+		}
 	} else {
-		ts_info("can't find config name, use default: %s",
-			TS_DEFAULT_CFG_BIN);
-		strncpy(board_data->cfg_bin_name, TS_DEFAULT_CFG_BIN,
-			sizeof(board_data->cfg_bin_name));
+		/* get firmware file name */
+		r = of_property_read_string(
+			node, "goodix,firmware-name", &name_tmp);
+		if (!r) {
+			ts_info("firmware name from dt: %s", name_tmp);
+			strncpy(board_data->fw_name, name_tmp,
+				sizeof(board_data->fw_name));
+		} else {
+			ts_info("can't find firmware name, use default: %s",
+				TS_DEFAULT_FIRMWARE);
+			strncpy(board_data->fw_name, TS_DEFAULT_FIRMWARE,
+				sizeof(board_data->fw_name));
+		}
+
+		/* get config file name */
+		r = of_property_read_string(
+			node, "goodix,config-name", &name_tmp);
+		if (!r) {
+			ts_info("config name from dt: %s", name_tmp);
+			strncpy(board_data->cfg_bin_name, name_tmp,
+				sizeof(board_data->cfg_bin_name));
+		} else {
+			ts_info("can't find config name, use default: %s",
+				TS_DEFAULT_CFG_BIN);
+			strncpy(board_data->cfg_bin_name, TS_DEFAULT_CFG_BIN,
+				sizeof(board_data->cfg_bin_name));
+		}
 	}
 
 	/* get xyz resolutions */
@@ -1775,7 +1815,8 @@ static int goodix_ts_irq_setup(struct goodix_ts_core *core_data)
 	}
 
 	ts_info("IRQ:%u,flags:%d", core_data->irq, (int)ts_bdata->irq_flags);
-	ret = devm_request_threaded_irq(&core_data->pdev->dev, core_data->irq,
+	ret = goog_devm_request_threaded_irq(core_data->gti,
+		&core_data->pdev->dev, core_data->irq,
 		goodix_ts_isr, goodix_ts_threadirq_func,
 		ts_bdata->irq_flags | IRQF_ONESHOT, GOODIX_CORE_DRIVER_NAME,
 		core_data);
@@ -2110,7 +2151,7 @@ static void goodix_ts_esd_work(struct work_struct *work)
 	if (ts_esd->irq_status)
 		goto exit;
 
-	if (!atomic_read(&ts_esd->esd_on))
+	if (!atomic_read(&ts_esd->esd_on) || atomic_read(&cd->suspended))
 		return;
 
 	if (!hw_ops->esd_check)
@@ -2119,9 +2160,22 @@ static void goodix_ts_esd_work(struct work_struct *work)
 	ret = hw_ops->esd_check(cd);
 	if (ret) {
 		ts_err("esd check failed");
-		goodix_ts_power_off(cd);
+		gpio_direction_output(cd->board_data.reset_gpio, 0);
+		if (cd->iovdd)
+			ret = regulator_disable(cd->iovdd);
+		if (cd->avdd)
+			ret = regulator_disable(cd->avdd);
+
 		usleep_range(5000, 5100);
-		goodix_ts_power_on(cd);
+
+		if (cd->iovdd) {
+			ret = regulator_enable(cd->iovdd);
+			usleep_range(3000, 3100);
+		}
+		if (cd->avdd)
+			ret = regulator_enable(cd->avdd);
+		usleep_range(15000, 15100);
+		gpio_direction_output(cd->board_data.reset_gpio, 1);
 	}
 
 exit:
