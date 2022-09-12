@@ -48,10 +48,12 @@ struct touch_apis_data {
 	int (*software_reset)(struct device *dev);
 	int (*set_scan_mode)(struct device *dev, enum scan_mode mode);
 	int (*set_sensing_enabled)(struct device *dev, bool enabled);
+#if IS_ENABLED(CONFIG_GTI_PM)
 	bool (*get_wake_lock_state)(
 		struct device *dev, enum gti_pm_wakelock_type type);
 	int (*set_wake_lock_state)(
 		struct device *dev, enum gti_pm_wakelock_type type, bool locked);
+#endif
 };
 
 extern int touch_apis_init(struct device *dev, struct touch_apis_data *data);
