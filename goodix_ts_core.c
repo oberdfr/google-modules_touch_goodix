@@ -1051,7 +1051,7 @@ static int gti_ping(void *private_data, struct gti_ping_cmd *cmd)
 	return cd->hw_ops->ping(cd);
 }
 
-static int git_selftest(void *private_data, struct gti_selftest_cmd *cmd)
+static int gti_selftest(void *private_data, struct gti_selftest_cmd *cmd)
 {
 	cmd->result = GTI_SELFTEST_RESULT_DONE;
 	return driver_test_selftest(cmd->buffer);
@@ -2727,6 +2727,11 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 	options = devm_kzalloc(&cd->pdev->dev,
 		sizeof(struct gti_optional_configuration), GFP_KERNEL);
+	if (options == NULL) {
+		ts_err("Failed to alloc gti options\n");
+		ret = -ENOMEM;
+		goto err_init_tpm;
+	}
 	options->get_mutual_sensor_data = get_mutual_sensor_data;
 	options->get_self_sensor_data = get_self_sensor_data;
 	options->set_continuous_report = set_continuous_report;
@@ -2739,7 +2744,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	options->set_heatmap_enabled = set_heatmap_enabled;
 	options->get_fw_version = gti_get_fw_version;
 	options->ping = gti_ping;
-	options->selftest = git_selftest;
+	options->selftest = gti_selftest;
 
 	cd->gti = goog_touch_interface_probe(
 		cd, cd->bus->dev, cd->input_dev, gti_default_handler, options);
@@ -2786,13 +2791,38 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	cd->touch_frame_size = touch_frame_size;
 	cd->touch_frame_package =
 		devm_kzalloc(&cd->pdev->dev, touch_frame_size + 8, GFP_KERNEL);
+	if (cd->touch_frame_package == NULL) {
+		ts_err("failed to alloc touch_frame_package");
+		ret = -ENOMEM;
+		goto err_setup_irq;
+	}
 	cd->mutual_data = devm_kzalloc(&cd->pdev->dev, mutual_size, GFP_KERNEL);
+	if (cd->mutual_data == NULL) {
+		ts_err("failed to alloc mutual_data");
+		ret = -ENOMEM;
+		goto err_setup_irq;
+	}
 	cd->mutual_data_manual = devm_kzalloc(&cd->pdev->dev, mutual_size,
 		GFP_KERNEL);
+	if (cd->mutual_data_manual == NULL) {
+		ts_err("failed to alloc mutual_data_manual");
+		ret = -ENOMEM;
+		goto err_setup_irq;
+	}
 	cd->self_sensing_data =
 		devm_kzalloc(&cd->pdev->dev, self_sensing_size, GFP_KERNEL);
+	if (cd->self_sensing_data == NULL) {
+		ts_err("failed to alloc self_sensing_data");
+		ret = -ENOMEM;
+		goto err_setup_irq;
+	}
 	cd->self_sensing_data_manual =
 		devm_kzalloc(&cd->pdev->dev, self_sensing_size, GFP_KERNEL);
+	if (cd->self_sensing_data_manual == NULL) {
+		ts_err("failed to alloc self_sensing_data_manual");
+		ret = -ENOMEM;
+		goto err_setup_irq;
+	}
 
 	/* request irq line */
 	ret = goodix_ts_irq_setup(cd);
