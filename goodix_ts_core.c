@@ -828,6 +828,8 @@ int set_sensing_enabled(struct device *dev, bool enabled)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
+#if IS_ENABLED(CONFIG_GTI_PM)
 bool get_wake_lock_state(struct device *dev, enum gti_pm_wakelock_type type)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
@@ -846,8 +848,8 @@ int set_wake_lock_state(
 		ret = goog_pm_wake_unlock(cd->gti, type);
 	return ret;
 }
+#endif
 
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 static int gti_default_handler(void *private_data, enum gti_cmd_type cmd_type,
 	struct gti_union_cmd_data *cmd)
 {
@@ -1674,7 +1676,9 @@ void goodix_ts_report_status(struct goodix_ts_core *core_data,
 	u8 checksum = 0;
 	int len = sizeof(ts_event->status_data);
 	u8 *data = (u8 *)st;
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 	struct gti_fw_status_data status_data = { 0 };
+#endif
 
 	for (i = 0; i < len - 1; i++)
 		checksum += data[i];
@@ -1691,7 +1695,7 @@ void goodix_ts_report_status(struct goodix_ts_core *core_data,
 		st->water_sta, st->before_factorA, st->after_factorA,
 		st->base_update_type, st->soft_reset_type, st->palm_sta,
 		st->noise_lv, st->grip_type);
-
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 	if (st->soft_reset)
 		goog_notify_fw_status_changed(core_data->gti, GTI_FW_STATUE_RESET,
 			&status_data);
@@ -1713,6 +1717,7 @@ void goodix_ts_report_status(struct goodix_ts_core *core_data,
 		goog_notify_fw_status_changed(core_data->gti, GTI_FW_STATUE_NOISE_MODE,
 			&status_data);
 	}
+#endif
 }
 
 /**
@@ -1814,7 +1819,11 @@ static int goodix_ts_irq_setup(struct goodix_ts_core *core_data)
 	}
 
 	ts_info("IRQ:%u,flags:%d", core_data->irq, (int)ts_bdata->irq_flags);
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 	ret = goog_devm_request_threaded_irq(core_data->gti,
+#else
+	ret = devm_request_threaded_irq(
+#endif
 		&core_data->pdev->dev, core_data->irq,
 		goodix_ts_isr, goodix_ts_threadirq_func,
 		ts_bdata->irq_flags | IRQF_ONESHOT, GOODIX_CORE_DRIVER_NAME,
@@ -2640,7 +2649,9 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 		misc->fw_log_len + sizeof(struct goodix_mutual_data) +
 		mutual_size + sizeof(struct goodix_self_sensing_data) +
 		self_sensing_size;
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 	struct gti_optional_configuration *options;
+#endif
 
 	/* alloc/config/register input device */
 	ret = goodix_ts_input_dev_config(cd);
@@ -2688,8 +2699,10 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	cd->apis_data.hardware_reset = hardware_reset;
 	cd->apis_data.set_scan_mode = set_scan_mode;
 	cd->apis_data.set_sensing_enabled = set_sensing_enabled;
+#if IS_ENABLED(CONFIG_GTI_PM)
 	cd->apis_data.get_wake_lock_state = get_wake_lock_state;
 	cd->apis_data.set_wake_lock_state = set_wake_lock_state;
+#endif
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
 	cd->apis_data.tmf = &cd->tmf;
 #endif
