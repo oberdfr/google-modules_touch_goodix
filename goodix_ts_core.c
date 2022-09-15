@@ -1345,7 +1345,7 @@ static int goodix_parse_dt(
 	if (of_property_read_bool(node, "goodix,panel_map")) {
 		for (index = 0;; index++) {
 			r = of_parse_phandle_with_fixed_args(
-				node, "goodix,panel_map", 0, index, &panelmap);
+				node, "goodix,panel_map", 1, index, &panelmap);
 			if (r)
 				return -EPROBE_DEFER;
 			panel = of_drm_find_panel(panelmap.np);
