@@ -31,7 +31,6 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
-#include <linux/pm_qos.h>
 #if IS_ENABLED(CONFIG_OF)
 #include <linux/of_gpio.h>
 #include <linux/regulator/consumer.h>
@@ -668,7 +667,6 @@ struct goodix_ic_config {
 struct goodix_ts_core {
 	int init_stage;
 	struct platform_device *pdev;
-	struct pm_qos_request pm_qos_req;
 	struct goodix_fw_version fw_version;
 	struct goodix_ic_info ic_info;
 	struct goodix_bus_interface *bus;
