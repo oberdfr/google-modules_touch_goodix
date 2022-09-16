@@ -2442,24 +2442,23 @@ static void monitor_gesture_event(struct work_struct *work)
 	struct goodix_ts_core *cd = container_of(delayed_work, struct goodix_ts_core,
 		monitor_gesture_work);
 	struct goodix_gesture_data* gesture_data = &cd->ts_event.gesture_data;
+	unsigned char gesture_type = gesture_data->gesture_type;
+	ktime_t now = ktime_get();
+	bool timeout = gesture_type == GOODIX_GESTURE_FOD_DOWN ?
+		now >= cd->gesture_up_timeout : now >= cd->gesture_down_timeout;
 
-	if (gesture_data->gesture_type == GOODIX_GESTURE_UNKNOWN) {
-		if (ktime_get() < cd->gesture_down_timeout) {
-			queue_delayed_work(cd->event_wq, &cd->monitor_gesture_work,
-				msecs_to_jiffies(5));
-			return;
-		}
-		cd->coords_timestamp = ktime_get();
-	} else if (gesture_data->gesture_type == GOODIX_GESTURE_FOD_DOWN) {
-		if (ktime_get() < cd->gesture_up_timeout) {
-			queue_delayed_work(cd->event_wq, &cd->monitor_gesture_work,
-				msecs_to_jiffies(5));
-			return;
-		}
-		cd->coords_timestamp = ktime_get();
+	if (gesture_type != GOODIX_GESTURE_FOD_UP && !timeout) {
+		queue_delayed_work(cd->event_wq, &cd->monitor_gesture_work,
+			msecs_to_jiffies(5));
+		return;
 	}
 
-	goodix_ts_report_gesture_up(cd);
+	if (gesture_type == GOODIX_GESTURE_FOD_UP ||
+		gesture_type == GOODIX_GESTURE_UNKNOWN) {
+		if (gesture_type == GOODIX_GESTURE_UNKNOWN)
+			cd->coords_timestamp = now;
+		goodix_ts_report_gesture_up(cd);
+	}
 
 	/* reset device or power on*/
 	if (cd->board_data.sleep_enable)
