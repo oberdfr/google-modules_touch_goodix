@@ -293,7 +293,7 @@ static ssize_t sensing_enabled_store(struct device *dev,
 	return count;
 }
 
-#if IS_ENABLED(CONFIG_GTI_PM)
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
 static ssize_t wake_lock_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -350,7 +350,7 @@ static DEVICE_ATTR_RO(ping);
 static DEVICE_ATTR_RW(reset);
 static DEVICE_ATTR_RW(scan_mode);
 static DEVICE_ATTR_RW(sensing_enabled);
-#if IS_ENABLED(CONFIG_GTI_PM)
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
 static DEVICE_ATTR_RW(wake_lock);
 #endif
 
@@ -366,7 +366,7 @@ static struct attribute *sysfs_attrs[] = {
 	&dev_attr_reset.attr,
 	&dev_attr_scan_mode.attr,
 	&dev_attr_sensing_enabled.attr,
-#if IS_ENABLED(CONFIG_GTI_PM)
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
 	&dev_attr_wake_lock.attr,
 #endif
 	NULL,
