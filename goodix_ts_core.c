@@ -1737,7 +1737,7 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	struct goodix_ts_esd *ts_esd = &core_data->ts_esd;
 	int ret;
 
-#if IS_ENABLED(CONFIG_GTI_PM)
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
 	goog_pm_wake_lock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ, true);
 #endif
 
@@ -1752,7 +1752,7 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		ret = ext_module->funcs->irq_event(core_data, ext_module);
 		if (ret == EVT_CANCEL_IRQEVT) {
 			mutex_unlock(&goodix_modules.mutex);
-#if IS_ENABLED(CONFIG_GTI_PM)
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
 			goog_pm_wake_unlock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
 #endif
 			return IRQ_HANDLED;
@@ -1791,7 +1791,7 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		hw_ops->after_event_handler(core_data);
 	}
 
-#if IS_ENABLED(CONFIG_GTI_PM)
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
 	goog_pm_wake_unlock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
 #endif
 
@@ -2693,7 +2693,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	cd->apis_data.hardware_reset = hardware_reset;
 	cd->apis_data.set_scan_mode = set_scan_mode;
 	cd->apis_data.set_sensing_enabled = set_sensing_enabled;
-#if IS_ENABLED(CONFIG_GTI_PM)
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
 	cd->apis_data.get_wake_lock_state = get_wake_lock_state;
 	cd->apis_data.set_wake_lock_state = set_wake_lock_state;
 #endif
@@ -2722,7 +2722,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	if (options == NULL) {
 		ts_err("Failed to alloc gti options\n");
 		ret = -ENOMEM;
-		goto err_init_tpm;
+		goto err_alloc_gti_options;
 	}
 	options->get_mutual_sensor_data = get_mutual_sensor_data;
 	options->get_self_sensor_data = get_self_sensor_data;
@@ -2744,7 +2744,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 #if IS_ENABLED(CONFIG_GTI_PM)
 	ret = goog_pm_register_notification(cd->gti, &dev_pm_ops);
 	if (ret < 0) {
-		ts_info("Failed to egister gti pm");
+		ts_info("Failed to register gti pm");
 		goto err_init_tpm;
 	}
 #endif
@@ -2837,9 +2837,12 @@ err_init_gesture:
 err_init_esd:
 	goodix_ts_procfs_exit(cd);
 err_init_procfs:
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 #if IS_ENABLED(CONFIG_GTI_PM)
 	goog_pm_unregister_notification(cd->gti);
 err_init_tpm:
+#endif
+err_alloc_gti_options:
 #endif
 	destroy_workqueue(cd->event_wq);
 err_alloc_workqueue:
