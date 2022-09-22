@@ -396,6 +396,29 @@ struct goodix_status_data {
 	u8 res[10];
 	u8 checksum;
 };
+
+struct goodix_stylus_data {
+	u8 stylus_protocol;
+	u8 sample_mode;
+	u8 stylus_key;
+	u16 stylus_pressure;
+	u16 stylus_freqA;
+	u16 stylus_freqB;
+	u8 res;
+	u16 stylus_next_freqA;
+	u16 stylus_next_freqB;
+	u16 stylus_noise_value[4];
+	s16 angle_coord_x;
+	s16 angle_coord_y;
+	s16 delta_x;
+	s16 delta_y;
+	u8 freq_indexA;
+	u8 freq_indexB;
+	u16 tx1[32];
+	u16 rx1[39];
+	u16 tx2[32];
+	u16 rx2[39];
+};
 #pragma pack()
 
 /* interrupt event type */
