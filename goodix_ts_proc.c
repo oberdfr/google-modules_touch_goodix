@@ -48,6 +48,7 @@
 #define CMD_GET_SELF_COMPEN "get_self_compensation"
 #define CMD_SET_REPORT_RATE "set_report_rate"
 #define CMD_GET_DUMP_LOG "get_dump_log"
+#define CMD_GET_STYLUS_DATA "get_stylus_data"
 
 char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_SELF_OPEN_TEST, CMD_NOISE_TEST, CMD_AUTO_NOISE_TEST, CMD_SHORT_TEST,
@@ -62,7 +63,7 @@ char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_GET_FW_STATUS, CMD_SET_HIGHSENSE_MODE, CMD_SET_GRIP_DATA,
 	CMD_SET_GRIP_MODE, CMD_SET_PALM_MODE, CMD_SET_NOISE_MODE,
 	CMD_SET_WATER_MODE, CMD_SET_HEATMAP, CMD_GET_SELF_COMPEN,
-	CMD_SET_REPORT_RATE, CMD_GET_DUMP_LOG, NULL };
+	CMD_SET_REPORT_RATE, CMD_GET_DUMP_LOG, CMD_GET_STYLUS_DATA, NULL };
 
 /* test limits keyword */
 #define CSV_TP_SPECIAL_RAW_MIN "special_raw_min"
@@ -2970,6 +2971,118 @@ static void goodix_get_dump_log(void)
 	}
 }
 
+static void goodix_get_stylus_data(void)
+{
+	struct goodix_stylus_data stylus_data;
+	u8 temp_buf[320] = {0};
+	u32 flag_addr = cd->ic_info.misc.touch_data_addr;
+	int tx = cd->ic_info.parm.drv_num;
+	int rx = cd->ic_info.parm.sen_num;
+	u32 stylus_struct_addr;
+	u8 point_type;
+	int touch_num;
+	int tx1_coor_x;
+	int tx1_coor_y;
+	s8 angle_x;
+	s8 angle_y;
+	int retry = 20;
+	int ret;
+	int i;
+
+	if (cd->bus->ic_type != IC_TYPE_BERLIN_B) {
+	index = sprintf(rbuf, "not support stylus data\n");
+	return;
+	}
+
+	/* disable irq & close esd */
+	cd->hw_ops->irq_enable(cd, false);
+	goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
+
+	/* clean touch event flag */
+	ret = cd->hw_ops->write(cd, flag_addr, temp_buf, 1);
+	if (ret < 0) {
+		ts_err("clean touch event failed, exit!");
+		goto exit;
+	}
+
+	while (retry--) {
+		usleep_range(2000, 2100);
+		ret = cd->hw_ops->read(cd, flag_addr, temp_buf, 8 + 16 + 2);
+		if (!ret && (temp_buf[0] & 0x80))
+			break;
+	}
+	if (retry < 0) {
+		ts_err("touch data is not ready val:0x%02x, exit!", temp_buf[0]);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	touch_num = temp_buf[2] & 0x0F;
+	if (touch_num == 0) {
+		ts_err("touch num is 0");
+		goto exit;
+	}
+	point_type = temp_buf[8] & 0x0F;
+	if (point_type != 0x01 && point_type != 0x03) {
+		ts_err("point type is not stylus");
+		goto exit;
+	}
+
+	tx1_coor_x = le16_to_cpup((__le16 *)(temp_buf + 10));
+	tx1_coor_y = le16_to_cpup((__le16 *)(temp_buf + 12));
+	angle_x = le16_to_cpup((__le16 *)(temp_buf + 16)) / 100;
+	angle_y = le16_to_cpup((__le16 *)(temp_buf + 18)) / 100;
+
+	stylus_struct_addr = cd->ic_info.misc.frame_data_addr +
+		cd->ic_info.misc.frame_data_head_len +
+		cd->ic_info.misc.fw_attr_len +
+		cd->ic_info.misc.fw_log_len;
+	ret = cd->hw_ops->read(cd, stylus_struct_addr, temp_buf, sizeof(stylus_data));
+	if (ret < 0) {
+		ts_err("read stylus struct data failed");
+		goto exit;
+	}
+
+	index += sprintf(&rbuf[index], "Tx1_rawdata\n");
+	for (i = 0; i < tx; i++)
+		index += sprintf(&rbuf[index], "%d,", stylus_data.tx1[i]);
+
+	index += sprintf(&rbuf[index], "\nRx1_rawdata\n");
+	for (i = 0; i < rx; i++)
+		index += sprintf(&rbuf[index], "%d,", stylus_data.rx1[i]);
+
+	index += sprintf(&rbuf[index], "\nTx2_rawdata\n");
+	for (i = 0; i < tx; i++)
+		index += sprintf(&rbuf[index], "%d,", stylus_data.tx2[i]);
+
+	index += sprintf(&rbuf[index], "\nRx2_rawdata\n");
+	for (i = 0; i < rx; i++)
+		index += sprintf(&rbuf[index], "%d,", stylus_data.rx2[i]);
+
+	index += sprintf(&rbuf[index], "\nTx1_coordinate_X/Tx1_coordinate_Y\n");
+   	 index += sprintf(&rbuf[index], "%d,%d", tx1_coor_x, tx1_coor_y);
+
+	index += sprintf(&rbuf[index], "\nTx2_coordinate_X/Tx2_coordinate_Y\n");
+	index += sprintf(&rbuf[index], "%d,%d", stylus_data.angle_coord_x, stylus_data.angle_coord_y);
+
+	index += sprintf(&rbuf[index], "\nRing_delta_X/Ring_delta_Y\n");
+	index += sprintf(&rbuf[index], "%d,%d", stylus_data.delta_x, stylus_data.delta_y);
+
+	index += sprintf(&rbuf[index], "\nRing_Angle_X/Y\n");
+	index += sprintf(&rbuf[index], "%d,%d", angle_x, angle_y);
+
+	index += sprintf(&rbuf[index], "\nfreq_indexA/freq_indexB/freq1_noise_level/freq2_noise_level/freq3_noise_level/freq4_noise_level\n");
+	index += sprintf(&rbuf[index], "%d,%d,%d,%d,%d,%d\n",
+			stylus_data.freq_indexA, stylus_data.freq_indexB,
+			stylus_data.stylus_noise_value[0], stylus_data.stylus_noise_value[1],
+			stylus_data.stylus_noise_value[2], stylus_data.stylus_noise_value[3]);
+
+exit:
+	/* enable irq & esd */
+	cd->hw_ops->irq_enable(cd, true);
+	goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
+}
+
 static ssize_t driver_test_write(
 	struct file *file, const char __user *buf, size_t count, loff_t *pos)
 {
@@ -3834,6 +3947,12 @@ static ssize_t driver_test_write(
 		goodix_get_dump_log();
 		goto exit;
 	}
+	if (!strncmp(p, CMD_GET_STYLUS_DATA, strlen(CMD_GET_STYLUS_DATA))) {
+		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
+		goodix_get_stylus_data();
+		goto exit;
+	}
+
 
 	rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
 	if (!rbuf) {
