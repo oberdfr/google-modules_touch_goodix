@@ -2974,7 +2974,7 @@ static void goodix_get_dump_log(void)
 static void goodix_get_stylus_data(void)
 {
 	struct goodix_stylus_data stylus_data;
-	u8 temp_buf[320] = {0};
+	u8 temp_buf[40] = {0};
 	u32 flag_addr = cd->ic_info.misc.touch_data_addr;
 	int tx = cd->ic_info.parm.drv_num;
 	int rx = cd->ic_info.parm.sen_num;
@@ -3037,7 +3037,7 @@ static void goodix_get_stylus_data(void)
 		cd->ic_info.misc.frame_data_head_len +
 		cd->ic_info.misc.fw_attr_len +
 		cd->ic_info.misc.fw_log_len;
-	ret = cd->hw_ops->read(cd, stylus_struct_addr, temp_buf, sizeof(stylus_data));
+	ret = cd->hw_ops->read(cd, stylus_struct_addr, (u8 *)&stylus_data, sizeof(stylus_data));
 	if (ret < 0) {
 		ts_err("read stylus struct data failed");
 		goto exit;
