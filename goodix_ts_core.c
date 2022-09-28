@@ -19,6 +19,7 @@
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
+#include <drm/drm_panel.h>
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 38)
 #include <linux/input/mt.h>
@@ -2027,6 +2028,7 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 
 	input_dev->name = GOODIX_CORE_DRIVER_NAME;
 	input_dev->phys = GOOIDX_INPUT_PHYS;
+	input_dev->uniq = "goodix_ts";
 	input_dev->id.product = 0xDEAD;
 	input_dev->id.vendor = 0xBEEF;
 	input_dev->id.version = 10427;
@@ -2087,6 +2089,8 @@ static int goodix_ts_pen_dev_config(struct goodix_ts_core *core_data)
 	input_set_drvdata(pen_dev, core_data);
 
 	pen_dev->name = GOODIX_PEN_DRIVER_NAME;
+	pen_dev->phys = "goodix_ts,pen/input0";
+	pen_dev->uniq = "goodix_ts,pen";
 	pen_dev->id.product = 0xDEAD;
 	pen_dev->id.vendor = 0xBEEF;
 	pen_dev->id.version = 10427;
