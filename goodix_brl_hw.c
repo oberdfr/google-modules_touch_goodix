@@ -1227,7 +1227,6 @@ static int brl_event_handler(
 
 	ts_event->event_type = EVENT_INVALID;
 	ts_event->clear_count = event_data->clear_count;
-	event_data->status_changed = true;
 	/* read status event */
 	if (event_data->status_changed)
 		hw_ops->read(cd, 0x1021C, (u8 *)&ts_event->status_data,
