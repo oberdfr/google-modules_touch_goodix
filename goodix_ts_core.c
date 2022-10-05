@@ -2512,7 +2512,7 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
 	if (check_gesture_mode(core_data)) {
 		gesture_data->gesture_type = GOODIX_GESTURE_UNKNOWN;
 		core_data->gesture_down_timeout = ktime_add_ms(ktime_get(), 100);
-		core_data->gesture_up_timeout = ktime_add_ms(ktime_get(), 500);
+		core_data->gesture_up_timeout = ktime_add_ms(ktime_get(), 200);
 		queue_delayed_work(core_data->event_wq, &core_data->monitor_gesture_work,
 			msecs_to_jiffies(5));
 	} else {
