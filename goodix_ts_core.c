@@ -1372,6 +1372,16 @@ static int goodix_parse_dt(
 				ts_info("Config name %s",
 					board_data->cfg_bin_name);
 
+				r = of_property_read_string_index(node,
+					"goodix,test_limits_names", panelmap.args[0], &name);
+				if (r < 0)
+					name = TS_DEFAULT_TEST_LIMITS;
+
+				strncpy(board_data->test_limits_name, name,
+					sizeof(board_data->test_limits_name));
+				ts_info("test limits name %s",
+					board_data->test_limits_name);
+
 				break;
 			}
 		}
@@ -1403,6 +1413,11 @@ static int goodix_parse_dt(
 			strncpy(board_data->cfg_bin_name, TS_DEFAULT_CFG_BIN,
 				sizeof(board_data->cfg_bin_name));
 		}
+
+		/* use default test limits name */
+		ts_info("use default test limits: %s", TS_DEFAULT_TEST_LIMITS);
+		strncpy(board_data->test_limits_name, TS_DEFAULT_TEST_LIMITS,
+			sizeof(board_data->test_limits_name));
 	}
 
 	/* get xyz resolutions */

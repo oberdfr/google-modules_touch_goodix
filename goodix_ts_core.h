@@ -76,6 +76,7 @@
 
 #define TS_DEFAULT_FIRMWARE "goodix_firmware.bin"
 #define TS_DEFAULT_CFG_BIN "goodix_cfg_group.bin"
+#define TS_DEFAULT_TEST_LIMITS "goodix_test_limits_255.csv"
 
 enum GOODIX_GESTURE_TYP {
 	GESTURE_SINGLE_TAP = (1 << 0),
@@ -347,6 +348,7 @@ struct goodix_ts_board_data {
 	bool sleep_enable;
 	char fw_name[GOODIX_MAX_STR_LABEL_LEN];
 	char cfg_bin_name[GOODIX_MAX_STR_LABEL_LEN];
+	char test_limits_name[GOODIX_MAX_STR_LABEL_LEN];
 };
 
 enum goodix_fw_update_mode {
