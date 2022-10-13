@@ -1519,10 +1519,19 @@ int brl_get_scan_mode(struct goodix_ts_core *cd, enum raw_scan_mode* mode)
 int brl_set_scan_mode(struct goodix_ts_core *cd, enum raw_scan_mode mode)
 {
 	struct goodix_ts_cmd cmd;
+	static const uint8_t raw_scan_mode_cmd_codes[] ={
+		[RAW_SCAN_MODE_AUTO] = 0x00,
+		[RAW_SCAN_MODE_NORMAL_ACTIVE] = 0x02,
+		[RAW_SCAN_MODE_NORMAL_IDLE] = 0x03,
+		[RAW_SCAN_MODE_LOW_POWER_ACTIVE] = 0x00,
+		[RAW_SCAN_MODE_LOW_POWER_IDLE] = 0x00,
+		[RAW_SCAN_MODE_SLEEP] = 0x00,
+	};
+
 
 	cmd.cmd = GOODIX_CMD_SET_SCAN_MODE;
 	cmd.len = 5;
-	cmd.data[0] = mode;
+	cmd.data[0] = raw_scan_mode_cmd_codes[mode];
 	if (cd->hw_ops->send_cmd(cd, &cmd))
 		ts_err("failed set scan mode cmd");
 
