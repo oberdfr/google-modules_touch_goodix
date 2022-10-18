@@ -931,7 +931,7 @@ static int get_self_sensor_data(
 
 		if (ret == 0) {
 			cmd->buffer = (u8 *)cd->self_sensing_data_manual;
-			cmd->size = tx * rx * sizeof(uint16_t);
+			cmd->size = (tx + rx) * sizeof(uint16_t);
 		}
 
 		/* enable irq & esd */
