@@ -19,6 +19,7 @@
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
+#include <drm/drm_panel.h>
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 38)
 #include <linux/input/mt.h>
@@ -1371,6 +1372,16 @@ static int goodix_parse_dt(
 				ts_info("Config name %s",
 					board_data->cfg_bin_name);
 
+				r = of_property_read_string_index(node,
+					"goodix,test_limits_names", panelmap.args[0], &name);
+				if (r < 0)
+					name = TS_DEFAULT_TEST_LIMITS;
+
+				strncpy(board_data->test_limits_name, name,
+					sizeof(board_data->test_limits_name));
+				ts_info("test limits name %s",
+					board_data->test_limits_name);
+
 				break;
 			}
 		}
@@ -1402,6 +1413,11 @@ static int goodix_parse_dt(
 			strncpy(board_data->cfg_bin_name, TS_DEFAULT_CFG_BIN,
 				sizeof(board_data->cfg_bin_name));
 		}
+
+		/* use default test limits name */
+		ts_info("use default test limits: %s", TS_DEFAULT_TEST_LIMITS);
+		strncpy(board_data->test_limits_name, TS_DEFAULT_TEST_LIMITS,
+			sizeof(board_data->test_limits_name));
 	}
 
 	/* get xyz resolutions */
@@ -1691,10 +1707,10 @@ void goodix_ts_report_status(struct goodix_ts_core *core_data,
 		st->grip_change, st->noise_lv_change, st->palm_change,
 		st->soft_reset, st->base_update, st->hop_change,
 		st->water_change);
-	ts_info("water_status[%d] before_factorA[%d] after_factorA[%d] base_update_type[0x%x] soft_reset_type[0x%x] palm_status[%d] noise_lv[%d] grip_type[%d]",
+	ts_info("water_status[%d] before_factorA[%d] after_factorA[%d] base_update_type[0x%x] soft_reset_type[0x%x] palm_status[%d] noise_lv[%d] grip_type[%d] event_id[%d] clear_count[%d]",
 		st->water_sta, st->before_factorA, st->after_factorA,
 		st->base_update_type, st->soft_reset_type, st->palm_sta,
-		st->noise_lv, st->grip_type);
+		st->noise_lv, st->grip_type, st->event_id, ts_event->clear_count);
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 	if (st->soft_reset)
 		goog_notify_fw_status_changed(core_data->gti, GTI_FW_STATUE_RESET,
@@ -1737,7 +1753,7 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	struct goodix_ts_esd *ts_esd = &core_data->ts_esd;
 	int ret;
 
-#if IS_ENABLED(CONFIG_GTI_PM)
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
 	goog_pm_wake_lock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ, true);
 #endif
 
@@ -1752,7 +1768,7 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		ret = ext_module->funcs->irq_event(core_data, ext_module);
 		if (ret == EVT_CANCEL_IRQEVT) {
 			mutex_unlock(&goodix_modules.mutex);
-#if IS_ENABLED(CONFIG_GTI_PM)
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
 			goog_pm_wake_unlock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
 #endif
 			return IRQ_HANDLED;
@@ -1791,7 +1807,7 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		hw_ops->after_event_handler(core_data);
 	}
 
-#if IS_ENABLED(CONFIG_GTI_PM)
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
 	goog_pm_wake_unlock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
 #endif
 
@@ -2027,6 +2043,7 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 
 	input_dev->name = GOODIX_CORE_DRIVER_NAME;
 	input_dev->phys = GOOIDX_INPUT_PHYS;
+	input_dev->uniq = "goodix_ts";
 	input_dev->id.product = 0xDEAD;
 	input_dev->id.vendor = 0xBEEF;
 	input_dev->id.version = 10427;
@@ -2087,6 +2104,8 @@ static int goodix_ts_pen_dev_config(struct goodix_ts_core *core_data)
 	input_set_drvdata(pen_dev, core_data);
 
 	pen_dev->name = GOODIX_PEN_DRIVER_NAME;
+	pen_dev->phys = "goodix_ts,pen/input0";
+	pen_dev->uniq = "goodix_ts,pen";
 	pen_dev->id.product = 0xDEAD;
 	pen_dev->id.vendor = 0xBEEF;
 	pen_dev->id.version = 10427;
@@ -2508,7 +2527,7 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
 	if (check_gesture_mode(core_data)) {
 		gesture_data->gesture_type = GOODIX_GESTURE_UNKNOWN;
 		core_data->gesture_down_timeout = ktime_add_ms(ktime_get(), 100);
-		core_data->gesture_up_timeout = ktime_add_ms(ktime_get(), 500);
+		core_data->gesture_up_timeout = ktime_add_ms(ktime_get(), 200);
 		queue_delayed_work(core_data->event_wq, &core_data->monitor_gesture_work,
 			msecs_to_jiffies(5));
 	} else {
@@ -2693,7 +2712,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	cd->apis_data.hardware_reset = hardware_reset;
 	cd->apis_data.set_scan_mode = set_scan_mode;
 	cd->apis_data.set_sensing_enabled = set_sensing_enabled;
-#if IS_ENABLED(CONFIG_GTI_PM)
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
 	cd->apis_data.get_wake_lock_state = get_wake_lock_state;
 	cd->apis_data.set_wake_lock_state = set_wake_lock_state;
 #endif
@@ -2722,7 +2741,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	if (options == NULL) {
 		ts_err("Failed to alloc gti options\n");
 		ret = -ENOMEM;
-		goto err_init_tpm;
+		goto err_alloc_gti_options;
 	}
 	options->get_mutual_sensor_data = get_mutual_sensor_data;
 	options->get_self_sensor_data = get_self_sensor_data;
@@ -2744,7 +2763,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 #if IS_ENABLED(CONFIG_GTI_PM)
 	ret = goog_pm_register_notification(cd->gti, &dev_pm_ops);
 	if (ret < 0) {
-		ts_info("Failed to egister gti pm");
+		ts_info("Failed to register gti pm");
 		goto err_init_tpm;
 	}
 #endif
@@ -2837,9 +2856,12 @@ err_init_gesture:
 err_init_esd:
 	goodix_ts_procfs_exit(cd);
 err_init_procfs:
+#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 #if IS_ENABLED(CONFIG_GTI_PM)
 	goog_pm_unregister_notification(cd->gti);
 err_init_tpm:
+#endif
+err_alloc_gti_options:
 #endif
 	destroy_workqueue(cd->event_wq);
 err_alloc_workqueue:

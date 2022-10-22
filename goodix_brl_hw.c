@@ -830,8 +830,6 @@ static int convert_ic_info(struct goodix_ic_info *info, const u8 *data)
 	LE32_TO_CPU(misc->esd_addr);
 	LE32_TO_CPU(misc->auto_scan_cmd_addr);
 	LE32_TO_CPU(misc->auto_scan_info_addr);
-	LE32_TO_CPU(misc->self_tx_cfg_addr);
-	LE32_TO_CPU(misc->self_rx_cfg_addr);
 
 	return 0;
 }
@@ -900,10 +898,6 @@ static void print_ic_info(struct goodix_ic_info *ic_info)
 		misc->stylus_rawdata_addr, misc->stylus_rawdata_len);
 	ts_info("esd_addr:                      0x%04X", misc->esd_addr);
 	ts_info("frame_data_addr:               0x%04X", misc->frame_data_addr);
-	ts_info("self_tx_cfg_addr:              0x%04x",
-		misc->self_tx_cfg_addr);
-	ts_info("self_rx_cfg_addr:              0x%04x",
-		misc->self_rx_cfg_addr);
 }
 
 static int brl_get_ic_info(
@@ -1232,6 +1226,7 @@ static int brl_event_handler(
 	memset(ts_event, 0, sizeof(*ts_event));
 
 	ts_event->event_type = EVENT_INVALID;
+	ts_event->clear_count = event_data->clear_count;
 	/* read status event */
 	if (event_data->status_changed)
 		hw_ops->read(cd, 0x1021C, (u8 *)&ts_event->status_data,
@@ -1290,16 +1285,20 @@ static int brld_get_framedata(
 	unsigned char val;
 	int retry = 20;
 	struct frame_head *frame_head;
-	unsigned char frame_buf[GOODIX_MAX_FRAMEDATA_LEN];
+	u8 *frame_buf;
 	unsigned char *cur_ptr;
 	unsigned int flag_addr = cd->ic_info.misc.frame_data_addr;
+
+	frame_buf = kzalloc(GOODIX_MAX_FRAMEDATA_LEN, GFP_KERNEL);
+	if (frame_buf == NULL)
+		return -ENOMEM;
 
 	/* clean touch event flag */
 	val = 0;
 	ret = brl_write(cd, flag_addr, &val, 1);
 	if (ret < 0) {
 		ts_err("clean touch event failed, exit!");
-		return ret;
+		goto exit;
 	}
 
 	while (retry--) {
@@ -1310,26 +1309,29 @@ static int brld_get_framedata(
 	}
 	if (retry < 0) {
 		ts_err("framedata is not ready val:0x%02x, exit!", val);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto exit;
 	}
 
 	ret = brl_read(cd, flag_addr, frame_buf, GOODIX_MAX_FRAMEDATA_LEN);
 	if (ret < 0) {
 		ts_err("read frame data failed");
-		return ret;
+		goto exit;
 	}
 
 	if (checksum_cmp(frame_buf, cd->ic_info.misc.frame_data_head_len,
 		    CHECKSUM_MODE_U8_LE)) {
 		ts_err("frame head checksum error");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto exit;
 	}
 
 	frame_head = (struct frame_head *)frame_buf;
 	if (checksum_cmp(frame_buf, frame_head->cur_frame_len,
 		    CHECKSUM_MODE_U16_LE)) {
 		ts_err("frame body checksum error");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto exit;
 	}
 	cur_ptr = frame_buf;
 	cur_ptr += cd->ic_info.misc.frame_data_head_len;
@@ -1338,7 +1340,9 @@ static int brld_get_framedata(
 	memcpy((u8 *)(info->buff + info->used_size), cur_ptr + 8,
 		cd->ic_info.misc.mutual_struct_len - 8);
 
-	return 0;
+exit:
+	kfree(frame_buf);
+	return ret;
 }
 
 static int brld_get_cap_data(
@@ -1515,10 +1519,19 @@ int brl_get_scan_mode(struct goodix_ts_core *cd, enum raw_scan_mode* mode)
 int brl_set_scan_mode(struct goodix_ts_core *cd, enum raw_scan_mode mode)
 {
 	struct goodix_ts_cmd cmd;
+	static const uint8_t raw_scan_mode_cmd_codes[] ={
+		[RAW_SCAN_MODE_AUTO] = 0x00,
+		[RAW_SCAN_MODE_NORMAL_ACTIVE] = 0x02,
+		[RAW_SCAN_MODE_NORMAL_IDLE] = 0x03,
+		[RAW_SCAN_MODE_LOW_POWER_ACTIVE] = 0x00,
+		[RAW_SCAN_MODE_LOW_POWER_IDLE] = 0x00,
+		[RAW_SCAN_MODE_SLEEP] = 0x00,
+	};
+
 
 	cmd.cmd = GOODIX_CMD_SET_SCAN_MODE;
 	cmd.len = 5;
-	cmd.data[0] = mode;
+	cmd.data[0] = raw_scan_mode_cmd_codes[mode];
 	if (cd->hw_ops->send_cmd(cd, &cmd))
 		ts_err("failed set scan mode cmd");
 

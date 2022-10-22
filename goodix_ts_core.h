@@ -31,6 +31,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
+#include <drm/drm_panel.h>
 #if IS_ENABLED(CONFIG_OF)
 #include <linux/of_gpio.h>
 #include <linux/regulator/consumer.h>
@@ -49,7 +50,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.1.1"
+#define GOODIX_DRIVER_VERSION "v1.1.3"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -57,7 +58,7 @@
 #define GOODIX_CFG_MAX_SIZE 4096
 #define GOODIX_FW_MAX_SIEZE (300 * 1024)
 #define GOODIX_MAX_STR_LABEL_LEN 32
-#define GOODIX_MAX_FRAMEDATA_LEN 1700
+#define GOODIX_MAX_FRAMEDATA_LEN (3 * 1024)
 #define GOODIX_GESTURE_DATA_LEN 16
 
 #define GOODIX_NORMAL_RESET_DELAY_MS 100
@@ -75,6 +76,7 @@
 
 #define TS_DEFAULT_FIRMWARE "goodix_firmware.bin"
 #define TS_DEFAULT_CFG_BIN "goodix_cfg_group.bin"
+#define TS_DEFAULT_TEST_LIMITS "goodix_test_limits_255.csv"
 
 enum GOODIX_GESTURE_TYP {
 	GESTURE_SINGLE_TAP = (1 << 0),
@@ -268,8 +270,6 @@ struct goodix_ic_info_misc { /* other data */
 	u32 esd_addr;
 	u32 auto_scan_cmd_addr;
 	u32 auto_scan_info_addr;
-	u32 self_tx_cfg_addr;
-	u32 self_rx_cfg_addr;
 };
 
 struct goodix_ic_info {
@@ -348,6 +348,7 @@ struct goodix_ts_board_data {
 	bool sleep_enable;
 	char fw_name[GOODIX_MAX_STR_LABEL_LEN];
 	char cfg_bin_name[GOODIX_MAX_STR_LABEL_LEN];
+	char test_limits_name[GOODIX_MAX_STR_LABEL_LEN];
 };
 
 enum goodix_fw_update_mode {
@@ -393,8 +394,32 @@ struct goodix_status_data {
 	u8 palm_sta;
 	u8 noise_lv;
 	u8 grip_type;
-	u8 res[10];
+	u8 res[9];
+	u8 event_id;
 	u8 checksum;
+};
+
+struct goodix_stylus_data {
+	u8 stylus_protocol;
+	u8 sample_mode;
+	u8 stylus_key;
+	u16 stylus_pressure;
+	u16 stylus_freqA;
+	u16 stylus_freqB;
+	u8 res;
+	u16 stylus_next_freqA;
+	u16 stylus_next_freqB;
+	u16 stylus_noise_value[4];
+	s16 angle_coord_x;
+	s16 angle_coord_y;
+	s16 delta_x;
+	s16 delta_y;
+	u8 freq_indexA;
+	u8 freq_indexB;
+	u16 tx1[32];
+	u16 rx1[39];
+	u16 tx2[32];
+	u16 rx2[39];
 };
 #pragma pack()
 
@@ -478,6 +503,7 @@ struct goodix_pen_data {
  */
 struct goodix_ts_event {
 	enum ts_event_type event_type;
+	u8 clear_count;
 	u8 fp_flag;	 /* finger print DOWN flag */
 	u8 request_code; /* represent the request type */
 	struct goodix_gesture_data gesture_data;
@@ -493,6 +519,9 @@ struct goodix_ts_event_data {
 	u8 fp_flag : 1;
 	u8 type : 4;
 	u8 int_count;
+	u8 reserved3;
+	u8 reserved4 : 4;
+	u8 clear_count : 4;
 };
 
 struct goodix_ts_request_event_data {
@@ -522,7 +551,8 @@ struct goodix_ts_touch_event_data {
 	u8 edge_flag : 1;
 	u8 reset_int : 1;
 	u8 custom_coor_info_flag : 1;
-	u8 reserved3 : 7;
+	u8 reserved3 : 3;
+	u8 clear_count : 4;
 	u16 reserved4;
 	u16 checksum;
 	u8 data[0];
