@@ -1727,15 +1727,13 @@ static int goodix_obtain_testlimits(void)
 	struct device *dev = &cd->pdev->dev;
 	int tx = cd->ic_info.parm.drv_num;
 	int rx = cd->ic_info.parm.sen_num;
-	char limit_file[100] = { 0 };
+	char *limit_file = cd->board_data.test_limits_name;
 	char *temp_buf = NULL;
 	char *raw_limit_min = CSV_TP_SPECIAL_RAW_MIN;
 	char *raw_limit_max = CSV_TP_SPECIAL_RAW_MAX;
 	s16 data_buf[7];
 	int ret;
 
-	sprintf(limit_file, "goodix_test_limits_%d.csv",
-		cd->fw_version.sensor_id);
 	ts_info("limit_file_name:%s", limit_file);
 
 	ret = request_firmware(&firmware, limit_file, dev);
