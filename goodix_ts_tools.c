@@ -69,6 +69,8 @@ struct goodix_tools_dev {
 	unsigned int ops_mode;
 	struct goodix_ts_cmd rawdiffcmd, normalcmd;
 	wait_queue_head_t wq;
+	bool is_clean_flag;
+	struct delayed_work sync_work;
 	struct mutex mutex;
 	atomic_t in_use;
 	struct goodix_ext_module module;
@@ -217,6 +219,9 @@ static int async_write(struct goodix_tools_dev *dev, void __user *arg)
 		ret = length;
 	}
 
+	if (reg_addr == ts_core->ic_info.misc.touch_data_addr)
+		dev->is_clean_flag = true;
+
 err_out:
 	kfree(databuf);
 	return ret;
@@ -247,6 +252,29 @@ static int init_cfg_data(struct goodix_ic_config *cfg, void __user *arg)
 	}
 	cfg->len = length;
 	return 0;
+}
+
+static void goodix_ctrl_sync_work(struct work_struct *work)
+{
+	struct goodix_ts_core *cd = goodix_tools_dev->ts_core;
+	static int cnt;
+
+	if (atomic_read(&goodix_tools_dev->in_use) == 0)
+		return;
+
+	if (cd->tools_ctrl_sync && !goodix_tools_dev->is_clean_flag) {
+		cnt++;
+		if (cnt >= 2) {
+			cnt = 0;
+			cd->tools_ctrl_sync = false;
+			ts_info("restore tools sync flag to 0");
+		}
+	} else {
+		cnt = 0;
+	}
+
+	goodix_tools_dev->is_clean_flag = false;
+	schedule_delayed_work(&goodix_tools_dev->sync_work, 5 * HZ);
 }
 
 /**
@@ -400,6 +428,7 @@ static int goodix_tools_open(struct inode *inode, struct file *filp)
 	goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
 	filp->private_data = goodix_tools_dev;
 	atomic_set(&goodix_tools_dev->in_use, 1);
+	schedule_delayed_work(&goodix_tools_dev->sync_work, 5 * HZ);
 	return 0;
 }
 
@@ -409,6 +438,7 @@ static int goodix_tools_release(struct inode *inode, struct file *filp)
 	/* when the last close this dev node unregister the module */
 	goodix_tools_dev->ts_core->tools_ctrl_sync = false;
 	atomic_set(&goodix_tools_dev->in_use, 0);
+	cancel_delayed_work_sync(&goodix_tools_dev->sync_work);
 	goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
 	ret = goodix_unregister_ext_module(&goodix_tools_dev->module);
 	return ret;
@@ -486,6 +516,7 @@ int goodix_tools_init(void)
 	goodix_tools_dev->module.name = GOODIX_TOOLS_NAME;
 	goodix_tools_dev->module.priv_data = goodix_tools_dev;
 	goodix_tools_dev->module.priority = EXTMOD_PRIO_DBGTOOL;
+	INIT_DELAYED_WORK(&goodix_tools_dev->sync_work, goodix_ctrl_sync_work);
 
 	ret = misc_register(&goodix_tools_miscdev);
 	if (ret)
