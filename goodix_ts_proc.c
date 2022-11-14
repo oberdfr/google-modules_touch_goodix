@@ -49,6 +49,7 @@
 #define CMD_SET_REPORT_RATE "set_report_rate"
 #define CMD_GET_DUMP_LOG "get_dump_log"
 #define CMD_GET_STYLUS_DATA "get_stylus_data"
+#define CMD_SET_FREQ_INDEX "set_freq_index"
 
 char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_SELF_OPEN_TEST, CMD_NOISE_TEST, CMD_AUTO_NOISE_TEST, CMD_SHORT_TEST,
@@ -63,7 +64,8 @@ char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_GET_FW_STATUS, CMD_SET_HIGHSENSE_MODE, CMD_SET_GRIP_DATA,
 	CMD_SET_GRIP_MODE, CMD_SET_PALM_MODE, CMD_SET_NOISE_MODE,
 	CMD_SET_WATER_MODE, CMD_SET_HEATMAP, CMD_GET_SELF_COMPEN,
-	CMD_SET_REPORT_RATE, CMD_GET_DUMP_LOG, CMD_GET_STYLUS_DATA, NULL };
+	CMD_SET_REPORT_RATE, CMD_GET_DUMP_LOG, CMD_GET_STYLUS_DATA,
+	CMD_SET_FREQ_INDEX, NULL };
 
 /* test limits keyword */
 #define CSV_TP_SPECIAL_RAW_MIN "special_raw_min"
@@ -2551,7 +2553,7 @@ static void goodix_set_continue_mode(u8 val)
 static void goodix_read_config(void)
 {
 	int ret;
-	u8* cfg_buf;
+	u8 *cfg_buf;
 	u32 cfg_id;
 	u8 cfg_ver;
 
@@ -3123,6 +3125,41 @@ exit:
 	goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
 }
 
+static void goodix_force_update(void)
+{
+	int i;
+	int ret;
+
+	for (i = 0; i < GOODIX_MAX_CONFIG_GROUP; i++) {
+		kfree(cd->ic_configs[i]);
+		cd->ic_configs[i] = NULL;
+	}
+
+	ret = goodix_get_config_proc(cd);
+	if (ret < 0)
+		ts_err("not found valid config");
+
+	ret = goodix_do_fw_update(cd->ic_configs[CONFIG_TYPE_NORMAL],
+		UPDATE_MODE_BLOCK | UPDATE_MODE_FORCE |
+			UPDATE_MODE_SRC_REQUEST);
+	if (ret < 0)
+		index = sprintf(rbuf, "%s: NG\n", CMD_FW_UPDATE);
+	else
+		index = sprintf(rbuf, "%s: OK\n", CMD_FW_UPDATE);
+}
+
+static void goodix_set_freq_index(int freq)
+{
+	struct goodix_ts_cmd temp_cmd;
+
+	index = sprintf(rbuf, "set frequency index %d\n", freq);
+	ts_info("set frequency index %d", freq);
+	temp_cmd.len = 5;
+	temp_cmd.cmd = 0x9C;
+	temp_cmd.data[0] = freq;
+	cd->hw_ops->send_cmd(cd, &temp_cmd);
+}
+
 static ssize_t driver_test_write(
 	struct file *file, const char __user *buf, size_t count, loff_t *pos)
 {
@@ -3155,18 +3192,7 @@ static ssize_t driver_test_write(
 
 	if (!strncmp(p, CMD_FW_UPDATE, strlen(CMD_FW_UPDATE))) {
 		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
-		if (!rbuf) {
-			ts_err("failed to alloc rbuf");
-			goto exit;
-		}
-		ret = goodix_do_fw_update(cd->ic_configs[CONFIG_TYPE_NORMAL],
-			UPDATE_MODE_BLOCK | UPDATE_MODE_FORCE |
-				UPDATE_MODE_SRC_REQUEST);
-		if (ret < 0) {
-			index = sprintf(rbuf, "%s: NG\n", CMD_FW_UPDATE);
-		} else {
-			index = sprintf(rbuf, "%s: OK\n", CMD_FW_UPDATE);
-		}
+		goodix_force_update();
 		goto exit;
 	}
 
@@ -3997,6 +4023,23 @@ static ssize_t driver_test_write(
 	if (!strncmp(p, CMD_GET_STYLUS_DATA, strlen(CMD_GET_STYLUS_DATA))) {
 		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
 		goodix_get_stylus_data();
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_SET_FREQ_INDEX, strlen(CMD_SET_FREQ_INDEX))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_FREQ_INDEX);
+			goto exit;
+		}
+		if (kstrtos32(p, 10, &cmd_val)) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_FREQ_INDEX);
+			goto exit;
+		}
+		goodix_set_freq_index(cmd_val);
 		goto exit;
 	}
 
