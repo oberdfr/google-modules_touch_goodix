@@ -932,7 +932,7 @@ static int get_self_sensor_data(
 
 		if (ret == 0) {
 			cmd->buffer = (u8 *)cd->self_sensing_data_manual;
-			cmd->size = tx * rx * sizeof(uint16_t);
+			cmd->size = (tx + rx) * sizeof(uint16_t);
 		}
 
 		/* enable irq & esd */
@@ -1713,24 +1713,24 @@ void goodix_ts_report_status(struct goodix_ts_core *core_data,
 		st->noise_lv, st->grip_type, st->event_id, ts_event->clear_count);
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 	if (st->soft_reset)
-		goog_notify_fw_status_changed(core_data->gti, GTI_FW_STATUE_RESET,
+		goog_notify_fw_status_changed(core_data->gti, GTI_FW_STATUS_RESET,
 			&status_data);
 
 	if (st->palm_change) {
 		goog_notify_fw_status_changed(core_data->gti,
-			st->palm_sta ? GTI_FW_STATUE_PALM_ENTER : GTI_FW_STATUE_PALM_EXIT,
+			st->palm_sta ? GTI_FW_STATUS_PALM_ENTER : GTI_FW_STATUS_PALM_EXIT,
 			&status_data);
 	}
 
 	if (st->grip_change) {
 		goog_notify_fw_status_changed(core_data->gti,
-			st->grip_type ? GTI_FW_STATUE_GRIP_ENTER : GTI_FW_STATUE_GRIP_EXIT,
+			st->grip_type ? GTI_FW_STATUS_GRIP_ENTER : GTI_FW_STATUS_GRIP_EXIT,
 			&status_data);
 	}
 
 	if (st->noise_lv_change) {
 		status_data.noise_level = st->noise_lv;
-		goog_notify_fw_status_changed(core_data->gti, GTI_FW_STATUE_NOISE_MODE,
+		goog_notify_fw_status_changed(core_data->gti, GTI_FW_STATUS_NOISE_MODE,
 			&status_data);
 	}
 #endif
