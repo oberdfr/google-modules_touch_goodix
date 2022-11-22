@@ -17,6 +17,9 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/spi/spi.h>
+#ifdef CONFIG_GOOG_TOUCH_INTERFACE
+#include <goog_touch_interface.h>
+#endif
 
 #include "goodix_ts_core.h"
 #define TS_DRIVER_NAME "gtx8_spi"
@@ -126,7 +129,7 @@ static int goodix_spi_read(struct device *dev, unsigned int addr,
 	int ret = 0;
 	int buf_len = SPI_READ_PREFIX_LEN - 1 + len;
 
-	if (buf_len >= 64) {
+	if (goodix_spi_bus.dma_mode_enabled && buf_len >= 64) {
 		buf_len = ALIGN(buf_len, 4);
 	}
 
@@ -170,7 +173,7 @@ static int goodix_spi_read(struct device *dev, unsigned int addr,
 	xfers.rx_buf = rx_buf;
 	xfers.len = buf_len;
 	xfers.cs_change = 0;
-	xfers.bits_per_word = buf_len >= 64 ? 32 : 8;
+	if (goodix_spi_bus.dma_mode_enabled) xfers.bits_per_word = buf_len >= 64 ? 32 : 8;
 	spi_message_add_tail(&xfers, &spi_msg);
 	ret = spi_sync(spi, &spi_msg);
 	if (ret < 0) {
@@ -200,7 +203,7 @@ static int goodix_spi_read_fast(struct device *dev, unsigned int addr,
 	int ret = 0;
 	int buf_len = SPI_READ_PREFIX_LEN - 1 + len;
 
-	if (buf_len >= 64) {
+	if (goodix_spi_bus.dma_mode_enabled && buf_len >= 64) {
 		buf_len = ALIGN(buf_len, 4);
 	}
 
@@ -233,7 +236,7 @@ static int goodix_spi_read_fast(struct device *dev, unsigned int addr,
 	xfers.rx_buf = package->header;
 	xfers.len = buf_len;
 	xfers.cs_change = 0;
-	xfers.bits_per_word = buf_len >= 64 ? 32 : 8;
+	if (goodix_spi_bus.dma_mode_enabled) xfers.bits_per_word = buf_len >= 64 ? 32 : 8;
 	spi_message_add_tail(&xfers, &spi_msg);
 
 	ret = spi_sync(spi, &spi_msg);
@@ -269,7 +272,7 @@ static int goodix_spi_write(struct device *dev, unsigned int addr,
 	int ret = 0;
 	int buf_len = SPI_WRITE_PREFIX_LEN + len;
 
-	if (buf_len >= 64) {
+	if (goodix_spi_bus.dma_mode_enabled && buf_len >= 64) {
 		buf_len = ALIGN(buf_len, 4);
 	}
 
@@ -297,7 +300,7 @@ static int goodix_spi_write(struct device *dev, unsigned int addr,
 	xfers.tx_buf = tx_buf;
 	xfers.len = buf_len;
 	xfers.cs_change = 0;
-	xfers.bits_per_word = buf_len >= 64 ? 32 : 8;
+	if (goodix_spi_bus.dma_mode_enabled) xfers.bits_per_word = buf_len >= 64 ? 32 : 8;
 	spi_message_add_tail(&xfers, &spi_msg);
 	ret = spi_sync(spi, &spi_msg);
 
@@ -361,6 +364,12 @@ static int goodix_spi_probe(struct spi_device *spi)
 	}
 
 	mutex_init(&goodix_spi_bus.mutex);
+
+	goodix_spi_bus.dma_mode_enabled = false;
+#ifdef CONFIG_GOOG_TOUCH_INTERFACE
+	goodix_spi_bus.dma_mode_enabled = goog_check_spi_dma_enabled(spi);
+	ts_info("dma_mode: %s\n", goodix_spi_bus.dma_mode_enabled ? "enabled" : "disabled");
+#endif
 
 	/* ts core device */
 	goodix_pdev = kzalloc(sizeof(struct platform_device), GFP_KERNEL);
