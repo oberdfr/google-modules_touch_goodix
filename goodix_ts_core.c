@@ -2330,28 +2330,6 @@ static void goodix_ts_release_connects(struct goodix_ts_core *core_data)
 }
 #endif
 
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
-static void goodix_ts_release_connects_goog(struct goodix_ts_core *core_data)
-{
-	struct input_dev *input_dev = core_data->input_dev;
-	struct goog_touch_interface *gti = core_data->gti;
-	int i;
-
-	goog_input_lock(gti);
-
-	goog_input_set_timestamp(gti, input_dev, KTIME_RELEASE_ALL);
-	for (i = 0; i < GOODIX_MAX_TOUCH; i++) {
-		goog_input_mt_slot(gti, input_dev, i);
-		goog_input_mt_report_slot_state(
-			gti, input_dev, MT_TOOL_FINGER, false);
-	}
-	goog_input_report_key(gti, input_dev, BTN_TOUCH, 0);
-	goog_input_sync(gti, input_dev);
-
-	goog_input_unlock(gti);
-}
-#endif
-
 /**
  * goodix_ts_suspend - Touchscreen suspend function
  * Called by PM/FB/EARLYSUSPEN module to put the device to sleep
@@ -2428,9 +2406,7 @@ static int goodix_ts_suspend(struct goodix_ts_core *core_data)
 	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
 
 out:
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
-	goodix_ts_release_connects_goog(core_data);
-#else
+#if !IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 	goodix_ts_release_connects(core_data);
 #endif
 
