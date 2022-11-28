@@ -2038,9 +2038,6 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 		return -ENOMEM;
 	}
 
-	core_data->input_dev = input_dev;
-	input_set_drvdata(input_dev, core_data);
-
 	input_dev->name = GOODIX_CORE_DRIVER_NAME;
 	input_dev->phys = GOOIDX_INPUT_PHYS;
 	input_dev->uniq = "goodix_ts";
@@ -2085,6 +2082,9 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 		return r;
 	}
 
+	core_data->input_dev = input_dev;
+	input_set_drvdata(input_dev, core_data);
+
 	return 0;
 }
 
@@ -2099,9 +2099,6 @@ static int goodix_ts_pen_dev_config(struct goodix_ts_core *core_data)
 		ts_err("Failed to allocated pen device");
 		return -ENOMEM;
 	}
-
-	core_data->pen_dev = pen_dev;
-	input_set_drvdata(pen_dev, core_data);
 
 	pen_dev->name = GOODIX_PEN_DRIVER_NAME;
 	pen_dev->phys = "goodix_ts,pen/input0";
@@ -2137,6 +2134,9 @@ static int goodix_ts_pen_dev_config(struct goodix_ts_core *core_data)
 		return r;
 	}
 
+	core_data->pen_dev = pen_dev;
+	input_set_drvdata(pen_dev, core_data);
+
 	return 0;
 }
 
@@ -2145,7 +2145,6 @@ void goodix_ts_input_dev_remove(struct goodix_ts_core *core_data)
 	if (!core_data->input_dev)
 		return;
 	input_unregister_device(core_data->input_dev);
-	input_free_device(core_data->input_dev);
 	core_data->input_dev = NULL;
 }
 
@@ -2154,7 +2153,6 @@ void goodix_ts_pen_dev_remove(struct goodix_ts_core *core_data)
 	if (!core_data->pen_dev)
 		return;
 	input_unregister_device(core_data->pen_dev);
-	input_free_device(core_data->pen_dev);
 	core_data->pen_dev = NULL;
 }
 
@@ -2330,28 +2328,6 @@ static void goodix_ts_release_connects(struct goodix_ts_core *core_data)
 }
 #endif
 
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
-static void goodix_ts_release_connects_goog(struct goodix_ts_core *core_data)
-{
-	struct input_dev *input_dev = core_data->input_dev;
-	struct goog_touch_interface *gti = core_data->gti;
-	int i;
-
-	goog_input_lock(gti);
-
-	goog_input_set_timestamp(gti, input_dev, KTIME_RELEASE_ALL);
-	for (i = 0; i < GOODIX_MAX_TOUCH; i++) {
-		goog_input_mt_slot(gti, input_dev, i);
-		goog_input_mt_report_slot_state(
-			gti, input_dev, MT_TOOL_FINGER, false);
-	}
-	goog_input_report_key(gti, input_dev, BTN_TOUCH, 0);
-	goog_input_sync(gti, input_dev);
-
-	goog_input_unlock(gti);
-}
-#endif
-
 /**
  * goodix_ts_suspend - Touchscreen suspend function
  * Called by PM/FB/EARLYSUSPEN module to put the device to sleep
@@ -2428,9 +2404,7 @@ static int goodix_ts_suspend(struct goodix_ts_core *core_data)
 	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
 
 out:
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
-	goodix_ts_release_connects_goog(core_data);
-#else
+#if !IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 	goodix_ts_release_connects(core_data);
 #endif
 
@@ -3148,38 +3122,39 @@ static int goodix_ts_remove(struct platform_device *pdev)
 	struct goodix_ts_core *core_data = platform_get_drvdata(pdev);
 	struct goodix_ts_hw_ops *hw_ops = core_data->hw_ops;
 
-	goodix_ts_unregister_notifier(&core_data->ts_notifier);
-	goodix_tools_exit();
-	goodix_ts_power_off(core_data);
-	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
-
 	if (core_data->init_stage >= CORE_INIT_STAGE2) {
+		hw_ops->irq_enable(core_data, false);
+		inspect_module_exit();
 #if IS_ENABLED(CONFIG_GOODIX_GESTURE)
 		gesture_module_exit();
 #endif
-		inspect_module_exit();
-		hw_ops->irq_enable(core_data, false);
-#if IS_ENABLED(CONFIG_FB)
-		fb_unregister_client(&core_data->fb_notifier);
-#endif
 		core_module_prob_sate = CORE_MODULE_REMOVED;
 		goodix_ts_esd_uninit(core_data);
+		goodix_ts_procfs_exit(core_data);
 
-		goodix_fw_update_uninit();
-		goodix_ts_input_dev_remove(core_data);
-		goodix_ts_pen_dev_remove(core_data);
-		goodix_ts_sysfs_exit(core_data);
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 #if IS_ENABLED(CONFIG_GTI_PM)
 		goog_pm_unregister_notification(core_data->gti);
 #endif
-		goog_touch_interface_remove(core_data->gti);
-#endif
 		destroy_workqueue(core_data->event_wq);
 		touch_apis_deinit(&core_data->pdev->dev);
-		goodix_ts_procfs_exit(core_data);
-		goodix_ts_power_off(core_data);
+		goog_touch_interface_remove(core_data->gti);
+		goodix_ts_sysfs_exit(core_data);
+#endif
+#if IS_ENABLED(CONFIG_FB)
+		fb_unregister_client(&core_data->fb_notifier);
+#endif
+		goodix_ts_pen_dev_remove(core_data);
+		goodix_ts_input_dev_remove(core_data);
+
+		goodix_fw_update_uninit();
 	}
+
+	goodix_tools_exit();
+	goodix_ts_unregister_notifier(&core_data->ts_notifier);
+	goodix_ts_power_off(core_data);
+	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
+	mutex_destroy(&core_data->cmd_lock);
 
 	return 0;
 }
