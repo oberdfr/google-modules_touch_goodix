@@ -932,7 +932,7 @@ static int get_self_sensor_data(
 
 		if (ret == 0) {
 			cmd->buffer = (u8 *)cd->self_sensing_data_manual;
-			cmd->size = tx * rx * sizeof(uint16_t);
+			cmd->size = (tx + rx) * sizeof(uint16_t);
 		}
 
 		/* enable irq & esd */
@@ -1713,24 +1713,24 @@ void goodix_ts_report_status(struct goodix_ts_core *core_data,
 		st->noise_lv, st->grip_type, st->event_id, ts_event->clear_count);
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 	if (st->soft_reset)
-		goog_notify_fw_status_changed(core_data->gti, GTI_FW_STATUE_RESET,
+		goog_notify_fw_status_changed(core_data->gti, GTI_FW_STATUS_RESET,
 			&status_data);
 
 	if (st->palm_change) {
 		goog_notify_fw_status_changed(core_data->gti,
-			st->palm_sta ? GTI_FW_STATUE_PALM_ENTER : GTI_FW_STATUE_PALM_EXIT,
+			st->palm_sta ? GTI_FW_STATUS_PALM_ENTER : GTI_FW_STATUS_PALM_EXIT,
 			&status_data);
 	}
 
 	if (st->grip_change) {
 		goog_notify_fw_status_changed(core_data->gti,
-			st->grip_type ? GTI_FW_STATUE_GRIP_ENTER : GTI_FW_STATUE_GRIP_EXIT,
+			st->grip_type ? GTI_FW_STATUS_GRIP_ENTER : GTI_FW_STATUS_GRIP_EXIT,
 			&status_data);
 	}
 
 	if (st->noise_lv_change) {
 		status_data.noise_level = st->noise_lv;
-		goog_notify_fw_status_changed(core_data->gti, GTI_FW_STATUE_NOISE_MODE,
+		goog_notify_fw_status_changed(core_data->gti, GTI_FW_STATUS_NOISE_MODE,
 			&status_data);
 	}
 #endif
@@ -2330,28 +2330,6 @@ static void goodix_ts_release_connects(struct goodix_ts_core *core_data)
 }
 #endif
 
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
-static void goodix_ts_release_connects_goog(struct goodix_ts_core *core_data)
-{
-	struct input_dev *input_dev = core_data->input_dev;
-	struct goog_touch_interface *gti = core_data->gti;
-	int i;
-
-	goog_input_lock(gti);
-
-	goog_input_set_timestamp(gti, input_dev, KTIME_RELEASE_ALL);
-	for (i = 0; i < GOODIX_MAX_TOUCH; i++) {
-		goog_input_mt_slot(gti, input_dev, i);
-		goog_input_mt_report_slot_state(
-			gti, input_dev, MT_TOOL_FINGER, false);
-	}
-	goog_input_report_key(gti, input_dev, BTN_TOUCH, 0);
-	goog_input_sync(gti, input_dev);
-
-	goog_input_unlock(gti);
-}
-#endif
-
 /**
  * goodix_ts_suspend - Touchscreen suspend function
  * Called by PM/FB/EARLYSUSPEN module to put the device to sleep
@@ -2428,9 +2406,7 @@ static int goodix_ts_suspend(struct goodix_ts_core *core_data)
 	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
 
 out:
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
-	goodix_ts_release_connects_goog(core_data);
-#else
+#if !IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 	goodix_ts_release_connects(core_data);
 #endif
 
