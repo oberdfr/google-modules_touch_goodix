@@ -46,7 +46,8 @@ enum brl_request_code {
 	BRL_REQUEST_CODE_REF_ERR = 0x02,
 	BRL_REQUEST_CODE_RESET = 0x03,
 	BRL_REQUEST_CODE_CLOCK = 0x04,
-	BRL_REQUEST_CODE_UPDATE = 0x05
+	BRL_REQUEST_CODE_UPDATE = 0x05,
+	BRL_REQUEST_PEN_FREQ_HOP = 0x10,
 };
 
 static int brl_select_spi_mode(struct goodix_ts_core *cd)
@@ -1246,6 +1247,27 @@ static int brl_event_handler(
 			ts_event->request_code = REQUEST_TYPE_RESET;
 		else if (request->request_type == BRL_REQUEST_CODE_UPDATE)
 			ts_event->request_code = REQUEST_TYPE_UPDATE;
+		else if (request->request_type == BRL_REQUEST_PEN_FREQ_HOP)
+			if (request->data_len && !checksum_cmp(request->data,
+							 request->data_len + 2,
+							 CHECKSUM_MODE_U8_LE)) {
+				if (request->data_len + 2 <=
+					GOODIX_REQUEST_DATA_LEN) {
+					memcpy(ts_event->request_data,
+						request->data,
+						request->data_len + 2);
+					ts_event->request_code =
+						REQUEST_PEN_FREQ_HOP;
+				} else {
+					ts_err("request data len exceed limit %d",
+						request->data_len + 2);
+				}
+			} else {
+				ts_info("invalid request data %d",
+					request->data_len);
+				ts_info("request data:%*ph", request->data_len,
+					request->data);
+			}
 		else
 			ts_debug("unsupported request code 0x%x",
 				request->request_type);

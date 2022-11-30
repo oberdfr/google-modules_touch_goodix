@@ -335,5 +335,8 @@ err_out:
 
 int goodix_get_config_proc(struct goodix_ts_core *cd)
 {
+	if (cd->board_data.use_one_binary)
+		return 1;
+
 	return goodix_get_config_data(cd, cd->fw_version.sensor_id);
 }
