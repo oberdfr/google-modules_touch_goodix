@@ -50,7 +50,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.1.4"
+#define GOODIX_DRIVER_VERSION "v1.2.2"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -60,7 +60,7 @@
 #define GOODIX_MAX_STR_LABEL_LEN 32
 #define GOODIX_MAX_FRAMEDATA_LEN (3 * 1024)
 #define GOODIX_GESTURE_DATA_LEN 16
-
+#define GOODIX_REQUEST_DATA_LEN 16
 #define GOODIX_NORMAL_RESET_DELAY_MS 100
 #define GOODIX_HOLD_CPU_RESET_DELAY_MS 5
 
@@ -346,6 +346,7 @@ struct goodix_ts_board_data {
 
 	bool pen_enable;
 	bool sleep_enable;
+	bool use_one_binary;
 	char fw_name[GOODIX_MAX_STR_LABEL_LEN];
 	char cfg_bin_name[GOODIX_MAX_STR_LABEL_LEN];
 	char test_limits_name[GOODIX_MAX_STR_LABEL_LEN];
@@ -436,7 +437,8 @@ enum ts_event_type {
 enum ts_request_type {
 	REQUEST_TYPE_CONFIG = 1,
 	REQUEST_TYPE_RESET = 3,
-	REQUEST_TYPE_UPDATE = 5
+	REQUEST_TYPE_UPDATE = 5,
+	REQUEST_PEN_FREQ_HOP = 0x10
 };
 
 /* notifier event */
@@ -506,6 +508,7 @@ struct goodix_ts_event {
 	u8 clear_count;
 	u8 fp_flag;	 /* finger print DOWN flag */
 	u8 request_code; /* represent the request type */
+	u8 request_data[GOODIX_REQUEST_DATA_LEN];
 	struct goodix_gesture_data gesture_data;
 	struct goodix_touch_data touch_data;
 	struct goodix_pen_data pen_data;
@@ -534,8 +537,9 @@ struct goodix_ts_request_event_data {
 	u8 request_type;
 	u8 reserved3;
 	u8 reserved4;
-	u8 reserved5;
+	u8 data_len;
 	u16 checksum;
+	u8 data[GOODIX_REQUEST_DATA_LEN];
 };
 
 struct goodix_ts_touch_event_data {
@@ -924,5 +928,6 @@ void driver_test_proc_remove(void);
 int goodix_do_inspect(struct goodix_ts_core *cd, struct ts_rawdata_info *info);
 void goodix_ts_report_status(struct goodix_ts_core *core_data,
 	struct goodix_ts_event *ts_event);
+int goodix_update_pen_freq(struct goodix_ts_core *cd, u8 *data, int len);
 
 #endif
