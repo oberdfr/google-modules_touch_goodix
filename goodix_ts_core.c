@@ -1873,7 +1873,7 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
 	ret = goog_pm_wake_lock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ, true);
 	if(ret < 0) {
-		GOOG_INFO("Error while obtaing IRQ wakelock: %d!\n", ret);
+		ts_err("Error while obtaing IRQ wakelock: %d!\n", ret);
 		return IRQ_HANDLED;
 	}
 #endif
