@@ -1871,7 +1871,11 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	int ret;
 
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
-	goog_pm_wake_lock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ, true);
+	ret = goog_pm_wake_lock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ, true);
+	if(ret < 0) {
+		GOOG_INFO("Error while obtaing IRQ wakelock: %d!\n", ret);
+		return IRQ_HANDLED;
+	}
 #endif
 
 	ts_esd->irq_status = true;
@@ -1886,7 +1890,7 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		if (ret == EVT_CANCEL_IRQEVT) {
 			mutex_unlock(&goodix_modules.mutex);
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
-			goog_pm_wake_unlock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
+			goog_pm_wake_unlock_nosync(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
 #endif
 			return IRQ_HANDLED;
 		}
@@ -1925,7 +1929,7 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	}
 
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
-	goog_pm_wake_unlock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
+	goog_pm_wake_unlock_nosync(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
 #endif
 
 	return IRQ_HANDLED;
