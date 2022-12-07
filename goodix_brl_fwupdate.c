@@ -265,6 +265,7 @@ struct fw_update_ctrl {
 	struct kobject *kobj;
 };
 static struct fw_update_ctrl goodix_fw_update_ctrl;
+static struct goodix_ic_config one_binary_cfg;
 
 static int goodix_fw_update_reset(int delay)
 {
@@ -404,6 +405,13 @@ static int goodix_parse_firmware(struct firmware_data *fw_data)
 		ts_debug("Subsystem flash_addr:%08X",
 			fw_summary->subsys[i].flash_addr);
 		ts_debug("Subsystem Ptr:%p", fw_summary->subsys[i].data);
+
+		if (fw_summary->subsys[i].type == CONFIG_DATA_TYPE) {
+			one_binary_cfg.len = fw_summary->subsys[i].size;
+			memcpy(one_binary_cfg.data, fw_summary->subsys[i].data,
+				one_binary_cfg.len);
+			goodix_fw_update_ctrl.ic_config = &one_binary_cfg;
+		}
 	}
 
 	if (fw_summary->chip_type == CHIP_TYPE_BRA &&

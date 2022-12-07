@@ -706,6 +706,89 @@ static ssize_t goodix_ts_debug_log_store(struct device *dev,
 	return count;
 }
 
+#define GOODIX_MAX_PEN_FREQ_DATA_LEN 16
+#define GOODIX_HOGP_INFO_LEN 3
+
+#pragma pack(1)
+struct goodix_hid_hogp {
+	u16 pressure;
+	u8 key;
+};
+#pragma pack()
+
+struct goodix_ble_data {
+	u8 freq[GOODIX_MAX_PEN_FREQ_DATA_LEN];
+	u8 hogp[GOODIX_HOGP_INFO_LEN];
+	int hogp_ready;
+	int freq_ready;
+	struct mutex lock;
+} goodix_ble_data;
+
+int goodix_update_pen_freq(struct goodix_ts_core *cd, u8 *data, int len)
+{
+	if (len > sizeof(goodix_ble_data.freq)) {
+		ts_err("pen freq data exceed limit");
+		return -EINVAL;
+	}
+	mutex_lock(&goodix_ble_data.lock);
+	memset(goodix_ble_data.freq, 0, sizeof(goodix_ble_data.freq));
+	memcpy(goodix_ble_data.freq, data, len);
+	goodix_ble_data.freq_ready = 1;
+	mutex_unlock(&goodix_ble_data.lock);
+	sysfs_notify(&cd->pdev->dev.kobj, NULL, "pen_freq");
+	ts_debug("send pen freq hop event");
+	return 0;
+}
+
+/* debug level show */
+static ssize_t goodix_ts_pen_freq_show(
+	struct device *dev, struct device_attribute *attr, char *buf)
+{
+	mutex_lock(&goodix_ble_data.lock);
+	memcpy(buf, goodix_ble_data.freq, sizeof(goodix_ble_data.freq));
+	goodix_ble_data.freq_ready = 0;
+	mutex_unlock(&goodix_ble_data.lock);
+	return sizeof(goodix_ble_data.freq);
+}
+
+/* debug level store */
+static ssize_t goodix_ts_pen_debug_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	int pen_freq;
+	struct goodix_ts_core *core_data = dev_get_drvdata(dev);
+
+	sscanf(buf, "%d", &pen_freq);
+	ts_debug("set new pen_freq %d", pen_freq);
+	goodix_ble_data.freq[0] = 0xC0;
+	goodix_ble_data.freq[1] = 1;
+	goodix_ble_data.freq[2] = pen_freq & 0xFF;
+
+	sysfs_notify(&core_data->pdev->dev.kobj, NULL, "pen_freq");
+	return count;
+}
+
+static ssize_t goodix_ts_pen_hogp_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct goodix_hid_hogp *tmp_prs;
+
+	if (count < sizeof(goodix_ble_data.hogp)) {
+		ts_err("data count to short");
+		return -EINVAL;
+	}
+
+	mutex_lock(&goodix_ble_data.lock);
+	memcpy(goodix_ble_data.hogp, buf, sizeof(goodix_ble_data.hogp));
+	goodix_ble_data.hogp_ready = 1;
+	mutex_unlock(&goodix_ble_data.lock);
+
+	tmp_prs = (struct goodix_hid_hogp *)goodix_ble_data.hogp;
+	ts_debug("set ble pen data: %d, key %x", tmp_prs->pressure,
+		tmp_prs->key);
+	return count;
+}
+
 static DEVICE_ATTR(driver_info, 0440, driver_info_show, NULL);
 static DEVICE_ATTR(chip_info, 0440, chip_info_show, NULL);
 static DEVICE_ATTR(send_cfg, 0220, NULL, goodix_ts_send_cfg_store);
@@ -717,6 +800,9 @@ static DEVICE_ATTR(
 	esd_info, 0664, goodix_ts_esd_info_show, goodix_ts_esd_info_store);
 static DEVICE_ATTR(
 	debug_log, 0664, goodix_ts_debug_log_show, goodix_ts_debug_log_store);
+static DEVICE_ATTR(pen_freq, 0440, goodix_ts_pen_freq_show, NULL);
+static DEVICE_ATTR(pen_debug, 0220, NULL, goodix_ts_pen_debug_store);
+static DEVICE_ATTR(pen_hogp, 0220, NULL, goodix_ts_pen_hogp_store);
 
 static struct attribute *sysfs_attrs[] = {
 	&dev_attr_driver_info.attr,
@@ -727,6 +813,9 @@ static struct attribute *sysfs_attrs[] = {
 	&dev_attr_irq_info.attr,
 	&dev_attr_esd_info.attr,
 	&dev_attr_debug_log.attr,
+	&dev_attr_pen_freq.attr,
+	&dev_attr_pen_debug.attr,
+	&dev_attr_pen_hogp.attr,
 	NULL,
 };
 
@@ -1343,6 +1432,12 @@ static int goodix_parse_dt(
 				sizeof(board_data->iovdd_name));
 	}
 
+	/* get use-one-binary flag */
+	board_data->use_one_binary =
+		of_property_read_bool(node, "goodix,use-one-binary");
+	if (board_data->use_one_binary)
+		ts_info("use one binary");
+
 	if (of_property_read_bool(node, "goodix,panel_map")) {
 		for (index = 0;; index++) {
 			r = of_parse_phandle_with_fixed_args(
@@ -1362,15 +1457,18 @@ static int goodix_parse_dt(
 				ts_info("Firmware name %s",
 					board_data->fw_name);
 
-				r = of_property_read_string_index(node,
-					"goodix,config_names", panelmap.args[0], &name);
-				if (r < 0)
-					name = TS_DEFAULT_CFG_BIN;
+				if (!board_data->use_one_binary) {
+					r = of_property_read_string_index(node,
+						"goodix,config_names",
+						panelmap.args[0], &name);
+					if (r < 0)
+						name = TS_DEFAULT_CFG_BIN;
 
-				strncpy(board_data->cfg_bin_name, name,
-					sizeof(board_data->cfg_bin_name));
-				ts_info("Config name %s",
-					board_data->cfg_bin_name);
+					strncpy(board_data->cfg_bin_name, name,
+						sizeof(board_data->cfg_bin_name));
+					ts_info("Config name %s",
+						board_data->cfg_bin_name);
+				}
 
 				r = of_property_read_string_index(node,
 					"goodix,test_limits_names", panelmap.args[0], &name);
@@ -1401,17 +1499,19 @@ static int goodix_parse_dt(
 		}
 
 		/* get config file name */
-		r = of_property_read_string(
-			node, "goodix,config-name", &name_tmp);
-		if (!r) {
-			ts_info("config name from dt: %s", name_tmp);
-			strncpy(board_data->cfg_bin_name, name_tmp,
-				sizeof(board_data->cfg_bin_name));
-		} else {
-			ts_info("can't find config name, use default: %s",
-				TS_DEFAULT_CFG_BIN);
-			strncpy(board_data->cfg_bin_name, TS_DEFAULT_CFG_BIN,
-				sizeof(board_data->cfg_bin_name));
+		if (!board_data->use_one_binary) {
+			r = of_property_read_string(
+				node, "goodix,config-name", &name_tmp);
+			if (!r) {
+				ts_info("config name from dt: %s", name_tmp);
+				strncpy(board_data->cfg_bin_name, name_tmp,
+					sizeof(board_data->cfg_bin_name));
+			} else {
+				ts_info("can't find config name, use default: %s",
+					TS_DEFAULT_CFG_BIN);
+				strncpy(board_data->cfg_bin_name, TS_DEFAULT_CFG_BIN,
+					sizeof(board_data->cfg_bin_name));
+			}
 		}
 
 		/* use default test limits name */
@@ -1459,6 +1559,8 @@ static void goodix_ts_report_pen(
 	struct input_dev *dev, struct goodix_pen_data *pen_data)
 {
 	int i;
+	static unsigned int pen_pressure;
+	struct goodix_hid_hogp *hogp;
 
 	mutex_lock(&dev->mutex);
 
@@ -1467,6 +1569,17 @@ static void goodix_ts_report_pen(
 		input_report_key(dev, pen_data->coords.tool_type, 1);
 		input_report_abs(dev, ABS_X, pen_data->coords.x);
 		input_report_abs(dev, ABS_Y, pen_data->coords.y);
+		mutex_lock(&goodix_ble_data.lock);
+		if (goodix_ble_data.hogp_ready) {
+			hogp = (struct goodix_hid_hogp *)goodix_ble_data.hogp;
+			pen_pressure = hogp->pressure;
+			ts_debug("update pen pressure from ble %d",
+				pen_pressure);
+		}
+		goodix_ble_data.hogp_ready = 0;
+		mutex_unlock(&goodix_ble_data.lock);
+
+		pen_data->coords.p = pen_pressure;
 		input_report_abs(dev, ABS_PRESSURE, pen_data->coords.p);
 		if (pen_data->coords.p == 0)
 			input_report_abs(dev, ABS_DISTANCE, 1);
@@ -1482,6 +1595,7 @@ static void goodix_ts_report_pen(
 			pen_data->keys[0].status == TS_TOUCH ? 1 : 0,
 			pen_data->keys[1].status == TS_TOUCH ? 1 : 0);
 	} else {
+		pen_pressure = 0;
 		input_report_key(dev, BTN_TOUCH, 0);
 		input_report_key(dev, pen_data->coords.tool_type, 0);
 	}
@@ -1664,6 +1778,9 @@ static int goodix_ts_request_handle(
 		ret = goodix_do_fw_update(
 			NULL, UPDATE_MODE_FORCE | UPDATE_MODE_BLOCK |
 				      UPDATE_MODE_SRC_REQUEST);
+	else if (ts_event->request_code == REQUEST_PEN_FREQ_HOP)
+		ret = goodix_update_pen_freq(cd, ts_event->request_data,
+			sizeof(ts_event->request_data));
 	else
 		ts_info("can not handle request type 0x%x",
 			ts_event->request_code);
@@ -1754,7 +1871,11 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	int ret;
 
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
-	goog_pm_wake_lock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ, true);
+	ret = goog_pm_wake_lock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ, true);
+	if(ret < 0) {
+		GOOG_INFO("Error while obtaing IRQ wakelock: %d!\n", ret);
+		return IRQ_HANDLED;
+	}
 #endif
 
 	ts_esd->irq_status = true;
@@ -1769,7 +1890,7 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		if (ret == EVT_CANCEL_IRQEVT) {
 			mutex_unlock(&goodix_modules.mutex);
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
-			goog_pm_wake_unlock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
+			goog_pm_wake_unlock_nosync(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
 #endif
 			return IRQ_HANDLED;
 		}
@@ -1808,7 +1929,7 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	}
 
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
-	goog_pm_wake_unlock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
+	goog_pm_wake_unlock_nosync(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
 #endif
 
 	return IRQ_HANDLED;
@@ -2038,9 +2159,6 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 		return -ENOMEM;
 	}
 
-	core_data->input_dev = input_dev;
-	input_set_drvdata(input_dev, core_data);
-
 	input_dev->name = GOODIX_CORE_DRIVER_NAME;
 	input_dev->phys = GOOIDX_INPUT_PHYS;
 	input_dev->uniq = "goodix_ts";
@@ -2085,6 +2203,9 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 		return r;
 	}
 
+	core_data->input_dev = input_dev;
+	input_set_drvdata(input_dev, core_data);
+
 	return 0;
 }
 
@@ -2099,9 +2220,6 @@ static int goodix_ts_pen_dev_config(struct goodix_ts_core *core_data)
 		ts_err("Failed to allocated pen device");
 		return -ENOMEM;
 	}
-
-	core_data->pen_dev = pen_dev;
-	input_set_drvdata(pen_dev, core_data);
 
 	pen_dev->name = GOODIX_PEN_DRIVER_NAME;
 	pen_dev->phys = "goodix_ts,pen/input0";
@@ -2137,6 +2255,9 @@ static int goodix_ts_pen_dev_config(struct goodix_ts_core *core_data)
 		return r;
 	}
 
+	core_data->pen_dev = pen_dev;
+	input_set_drvdata(pen_dev, core_data);
+
 	return 0;
 }
 
@@ -2145,7 +2266,6 @@ void goodix_ts_input_dev_remove(struct goodix_ts_core *core_data)
 	if (!core_data->input_dev)
 		return;
 	input_unregister_device(core_data->input_dev);
-	input_free_device(core_data->input_dev);
 	core_data->input_dev = NULL;
 }
 
@@ -2153,8 +2273,8 @@ void goodix_ts_pen_dev_remove(struct goodix_ts_core *core_data)
 {
 	if (!core_data->pen_dev)
 		return;
+	mutex_destroy(&goodix_ble_data.lock);
 	input_unregister_device(core_data->pen_dev);
-	input_free_device(core_data->pen_dev);
 	core_data->pen_dev = NULL;
 }
 
@@ -2657,6 +2777,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 			ts_err("failed set pen device");
 			goto err_finger;
 		}
+		mutex_init(&goodix_ble_data.lock);
 	}
 
 #if IS_ENABLED(CONFIG_FB)
@@ -2860,6 +2981,9 @@ static int goodix_send_ic_config(struct goodix_ts_core *cd, int type)
 	u32 config_id;
 	struct goodix_ic_config *cfg;
 
+	if (cd->board_data.use_one_binary)
+		return 0;
+
 	if (type >= GOODIX_MAX_CONFIG_GROUP) {
 		ts_err("unsupported config type %d", type);
 		return -EINVAL;
@@ -2905,10 +3029,12 @@ static int goodix_later_init_thread(void *data)
 
 	/* step 2: get config data from config bin */
 	ret = goodix_get_config_proc(cd);
-	if (ret)
+	if (ret < 0)
 		ts_info("no valid ic config found");
-	else
+	else if (ret == 0)
 		ts_info("success get valid ic config");
+	else
+		ts_info("one binary, no need find config");
 
 upgrade:
 	/* step 3: init fw struct add try do fw upgrade */
@@ -3124,38 +3250,39 @@ static int goodix_ts_remove(struct platform_device *pdev)
 	struct goodix_ts_core *core_data = platform_get_drvdata(pdev);
 	struct goodix_ts_hw_ops *hw_ops = core_data->hw_ops;
 
-	goodix_ts_unregister_notifier(&core_data->ts_notifier);
-	goodix_tools_exit();
-	goodix_ts_power_off(core_data);
-	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
-
 	if (core_data->init_stage >= CORE_INIT_STAGE2) {
+		hw_ops->irq_enable(core_data, false);
+		inspect_module_exit();
 #if IS_ENABLED(CONFIG_GOODIX_GESTURE)
 		gesture_module_exit();
 #endif
-		inspect_module_exit();
-		hw_ops->irq_enable(core_data, false);
-#if IS_ENABLED(CONFIG_FB)
-		fb_unregister_client(&core_data->fb_notifier);
-#endif
 		core_module_prob_sate = CORE_MODULE_REMOVED;
 		goodix_ts_esd_uninit(core_data);
+		goodix_ts_procfs_exit(core_data);
 
-		goodix_fw_update_uninit();
-		goodix_ts_input_dev_remove(core_data);
-		goodix_ts_pen_dev_remove(core_data);
-		goodix_ts_sysfs_exit(core_data);
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 #if IS_ENABLED(CONFIG_GTI_PM)
 		goog_pm_unregister_notification(core_data->gti);
 #endif
-		goog_touch_interface_remove(core_data->gti);
-#endif
 		destroy_workqueue(core_data->event_wq);
 		touch_apis_deinit(&core_data->pdev->dev);
-		goodix_ts_procfs_exit(core_data);
-		goodix_ts_power_off(core_data);
+		goog_touch_interface_remove(core_data->gti);
+		goodix_ts_sysfs_exit(core_data);
+#endif
+#if IS_ENABLED(CONFIG_FB)
+		fb_unregister_client(&core_data->fb_notifier);
+#endif
+		goodix_ts_pen_dev_remove(core_data);
+		goodix_ts_input_dev_remove(core_data);
+
+		goodix_fw_update_uninit();
 	}
+
+	goodix_tools_exit();
+	goodix_ts_unregister_notifier(&core_data->ts_notifier);
+	goodix_ts_power_off(core_data);
+	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
+	mutex_destroy(&core_data->cmd_lock);
 
 	return 0;
 }
