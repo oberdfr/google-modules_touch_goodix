@@ -1229,9 +1229,14 @@ static int brl_event_handler(
 	ts_event->event_type = EVENT_INVALID;
 	ts_event->clear_count = event_data->clear_count;
 	/* read status event */
-	if (event_data->status_changed)
+	if (event_data->status_changed) {
 		hw_ops->read(cd, 0x1021C, (u8 *)&ts_event->status_data,
 			sizeof(ts_event->status_data));
+
+		if (ts_event->status_data.soft_reset_type == 0x04) {
+			ts_info("Touch - unexpected reset! Reason : WDT");
+		}
+	}
 
 	if (event_data->type & (GOODIX_TOUCH_EVENT >> 4))
 		return goodix_touch_handler(cd, ts_event,
