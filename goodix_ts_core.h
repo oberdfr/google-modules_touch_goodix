@@ -47,6 +47,12 @@
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 #include <goog_touch_interface.h>
 #endif
+#if IS_ENABLED(CONFIG_VH_SYSTRACE)
+#include <trace/hooks/systrace.h>
+#else
+#define ATRACE_BEGIN(f)
+#define ATRACE_END()
+#endif
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
