@@ -1556,15 +1556,25 @@ static int goodix_parse_dt(
 #endif
 
 static void goodix_ts_report_pen(
-	struct input_dev *dev, struct goodix_pen_data *pen_data)
+	struct goodix_ts_core *cd, struct goodix_pen_data *pen_data)
 {
+	struct input_dev *dev = cd->pen_dev;
 	int i;
 	static unsigned int pen_pressure;
 	struct goodix_hid_hogp *hogp;
+	char trace_tag[128];
+	ktime_t pen_ktime;
 
 	mutex_lock(&dev->mutex);
+	input_set_timestamp(dev, cd->coords_timestamp);
+	pen_ktime = ktime_get();
 
 	if (pen_data->coords.status == TS_TOUCH) {
+		scnprintf(trace_tag, sizeof(trace_tag),
+			"stylus-active: IN_TS=%lld TS=%lld DELTA=%lld ns.\n",
+			ktime_to_ns(cd->coords_timestamp), ktime_to_ns(pen_ktime),
+			ktime_to_ns(ktime_sub(pen_ktime, cd->coords_timestamp)));
+		ATRACE_BEGIN(trace_tag);
 		input_report_key(dev, BTN_TOUCH, 1);
 		input_report_key(dev, pen_data->coords.tool_type, 1);
 		input_report_abs(dev, ABS_X, pen_data->coords.x);
@@ -1579,7 +1589,8 @@ static void goodix_ts_report_pen(
 		goodix_ble_data.hogp_ready = 0;
 		mutex_unlock(&goodix_ble_data.lock);
 
-		pen_data->coords.p = pen_pressure;
+		if (pen_data->coords.p && pen_pressure)
+			pen_data->coords.p = pen_pressure;
 		input_report_abs(dev, ABS_PRESSURE, pen_data->coords.p);
 		if (pen_data->coords.p == 0)
 			input_report_abs(dev, ABS_DISTANCE, 1);
@@ -1595,6 +1606,11 @@ static void goodix_ts_report_pen(
 			pen_data->keys[0].status == TS_TOUCH ? 1 : 0,
 			pen_data->keys[1].status == TS_TOUCH ? 1 : 0);
 	} else {
+		scnprintf(trace_tag, sizeof(trace_tag),
+			"stylus-inactive: IN_TS=%lld TS=%lld DELTA=%lld ns.\n",
+			ktime_to_ns(cd->coords_timestamp), ktime_to_ns(pen_ktime),
+			ktime_to_ns(ktime_sub(pen_ktime, cd->coords_timestamp)));
+		ATRACE_BEGIN(trace_tag);
 		pen_pressure = 0;
 		input_report_key(dev, BTN_TOUCH, 0);
 		input_report_key(dev, pen_data->coords.tool_type, 0);
@@ -1606,8 +1622,8 @@ static void goodix_ts_report_pen(
 		else
 			input_report_key(dev, pen_data->keys[i].code, 0);
 	}
-
 	input_sync(dev);
+	ATRACE_END();
 	mutex_unlock(&dev->mutex);
 }
 
@@ -1916,8 +1932,8 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		}
 		if (core_data->board_data.pen_enable &&
 			ts_event->event_type & EVENT_PEN) {
-			goodix_ts_report_pen(
-				core_data->pen_dev, &ts_event->pen_data);
+			core_data->coords_timestamp = core_data->isr_timestamp;
+			goodix_ts_report_pen(core_data, &ts_event->pen_data);
 		}
 		if (ts_event->event_type & EVENT_REQUEST)
 			goodix_ts_request_handle(core_data, ts_event);

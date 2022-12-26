@@ -47,6 +47,7 @@
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 #include <goog_touch_interface.h>
 #endif
+#include "../../../gs-google/drivers/soc/google/vh/kernel/systrace.h"
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
