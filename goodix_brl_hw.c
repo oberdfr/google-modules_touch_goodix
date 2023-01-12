@@ -1242,7 +1242,8 @@ static int brl_event_handler(
 	memset(ts_event, 0, sizeof(*ts_event));
 
 	ts_event->event_type = EVENT_INVALID;
-	ts_event->clear_count = event_data->clear_count;
+	ts_event->clear_count1 = event_data->clear_count1;
+	ts_event->clear_count2 = event_data->clear_count2;
 	/* read status event */
 	if (event_data->status_changed)
 		hw_ops->read(cd, 0x1021C, (u8 *)&ts_event->status_data,

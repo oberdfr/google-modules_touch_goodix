@@ -50,6 +50,7 @@
 #define CMD_GET_DUMP_LOG "get_dump_log"
 #define CMD_GET_STYLUS_DATA "get_stylus_data"
 #define CMD_SET_FREQ_INDEX "set_freq_index"
+#define CMD_DISABLE_FILTER "disable_filter"
 
 char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_SELF_OPEN_TEST, CMD_NOISE_TEST, CMD_AUTO_NOISE_TEST, CMD_SHORT_TEST,
@@ -65,7 +66,7 @@ char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_SET_GRIP_MODE, CMD_SET_PALM_MODE, CMD_SET_NOISE_MODE,
 	CMD_SET_WATER_MODE, CMD_SET_HEATMAP, CMD_GET_SELF_COMPEN,
 	CMD_SET_REPORT_RATE, CMD_GET_DUMP_LOG, CMD_GET_STYLUS_DATA,
-	CMD_SET_FREQ_INDEX, NULL };
+	CMD_SET_FREQ_INDEX, CMD_DISABLE_FILTER, NULL };
 
 /* test limits keyword */
 #define CSV_TP_SPECIAL_RAW_MIN "special_raw_min"
@@ -3161,6 +3162,17 @@ static void goodix_set_freq_index(int freq)
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 }
 
+static void goodix_disable_coor_filter(int val)
+{
+	struct goodix_ts_cmd temp_cmd;
+
+	index = sprintf(rbuf, "disable coordinate filter %d\n", val);
+	temp_cmd.len = 5;
+	temp_cmd.cmd = 0xCA;
+	temp_cmd.data[0] = val ? 1 : 0;
+	cd->hw_ops->send_cmd(cd, &temp_cmd);
+}
+
 static ssize_t driver_test_write(
 	struct file *file, const char __user *buf, size_t count, loff_t *pos)
 {
@@ -4044,6 +4056,23 @@ static ssize_t driver_test_write(
 			goto exit;
 		}
 		goodix_set_freq_index(cmd_val);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_DISABLE_FILTER, strlen(CMD_DISABLE_FILTER))) {
+		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_DISABLE_FILTER);
+			goto exit;
+		}
+		if (kstrtos32(p, 10, &cmd_val)) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_DISABLE_FILTER);
+			goto exit;
+		}
+		goodix_disable_coor_filter(cmd_val);
 		goto exit;
 	}
 

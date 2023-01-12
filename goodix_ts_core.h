@@ -56,7 +56,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.2.2"
+#define GOODIX_DRIVER_VERSION "v1.2.3"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -505,13 +505,16 @@ struct goodix_pen_data {
 
 /*
  * struct goodix_ts_event - touch event struct
+ * @clear_count1: clear count for old firmware
+ * @clear_count2: clear count for latest firmware
  * @event_type: touch event type, touch data or
  *	request event
  * @event_data: event data
  */
 struct goodix_ts_event {
 	enum ts_event_type event_type;
-	u8 clear_count;
+	u8 clear_count1;
+	u8 clear_count2;
 	u8 fp_flag;	 /* finger print DOWN flag */
 	u8 request_code; /* represent the request type */
 	u8 request_data[GOODIX_REQUEST_DATA_LEN];
@@ -530,7 +533,10 @@ struct goodix_ts_event_data {
 	u8 int_count;
 	u8 reserved3;
 	u8 reserved4 : 4;
-	u8 clear_count : 4;
+	u8 clear_count1 : 4;
+	u8 reserved5;
+	u8 reserved6 : 4;
+	u8 clear_count2 : 4;
 };
 
 struct goodix_ts_request_event_data {
@@ -562,8 +568,10 @@ struct goodix_ts_touch_event_data {
 	u8 reset_int : 1;
 	u8 custom_coor_info_flag : 1;
 	u8 reserved3 : 3;
-	u8 clear_count : 4;
-	u16 reserved4;
+	u8 clear_count1 : 4;
+	u8 reserved4;
+	u8 reserved5 : 4;
+	u8 clear_count2 : 4;
 	u16 checksum;
 	u8 data[0];
 };
