@@ -633,6 +633,7 @@ struct goodix_ts_hw_ops {
 	int (*gesture)(struct goodix_ts_core *cd, int gesture_type);
 	int (*reset)(struct goodix_ts_core *cd, int delay_ms);
 	int (*irq_enable)(struct goodix_ts_core *cd, bool enable);
+	int (*disable_irq_nosync)(struct goodix_ts_core *cd);
 	int (*read)(struct goodix_ts_core *cd, unsigned int addr,
 		unsigned char *data, unsigned int len);
 	int (*read_fast)(struct goodix_ts_core *cd, unsigned int addr,

@@ -344,11 +344,20 @@ static int brl_irq_enable(struct goodix_ts_core *cd, bool enable)
 	}
 
 	if (!enable && atomic_cmpxchg(&cd->irq_enabled, 1, 0)) {
-		disable_irq_nosync(cd->irq);
+		disable_irq(cd->irq);
 		ts_debug("Irq disabled");
 		return 0;
 	}
 	// ts_info("warnning: irq deepth inbalance!");
+	return 0;
+}
+
+static int brl_disable_irq_nosync(struct goodix_ts_core *cd)
+{
+	if (atomic_cmpxchg(&cd->irq_enabled, 1, 0)) {
+		disable_irq_nosync(cd->irq);
+		ts_debug("Irq disabled");
+	}
 	return 0;
 }
 
@@ -1830,6 +1839,7 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 	.gesture = brl_gesture,
 	.reset = brl_reset,
 	.irq_enable = brl_irq_enable,
+	.disable_irq_nosync = brl_disable_irq_nosync,
 	.read = brl_read,
 	.read_fast = brl_read_fast,
 	.write = brl_write,

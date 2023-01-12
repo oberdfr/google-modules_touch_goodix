@@ -969,8 +969,7 @@ static int get_mutual_sensor_data(
 		cmd->buffer = (u8 *)cd->mutual_data;
 		cmd->size = tx * rx * sizeof(uint16_t);
 	} else {
-		/* disable irq & close esd */
-		cd->hw_ops->irq_enable(cd, false);
+		/* close esd */
 		goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
 
 		ret = -EINVAL;
@@ -987,8 +986,7 @@ static int get_mutual_sensor_data(
 			cmd->size = tx * rx * sizeof(uint16_t);
 		}
 
-		/* enable irq & esd */
-		cd->hw_ops->irq_enable(cd, true);
+		/* enable esd */
 		goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
 	}
 	return ret;
@@ -2467,7 +2465,7 @@ static int goodix_ts_suspend(struct goodix_ts_core *core_data)
 	ts_info("Suspend start");
 	atomic_set(&core_data->suspended, 1);
 	/* disable irq */
-	hw_ops->irq_enable(core_data, false);
+	hw_ops->disable_irq_nosync(core_data);
 
 	/*
 	 * notify suspend event, inform the esd protector
