@@ -679,9 +679,10 @@ struct goodix_ts_hw_ops {
  * @esd_work: esd delayed work
  * @esd_on: 1 - turn on esd protection, 0 - turn
  *  off esd protection
+ * @skip_once: skip once if the check is no need this time.
  */
 struct goodix_ts_esd {
-	bool irq_status;
+	bool skip_once;
 	atomic_t esd_on;
 	struct delayed_work esd_work;
 	struct notifier_block esd_notifier;

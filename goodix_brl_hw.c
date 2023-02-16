@@ -324,6 +324,12 @@ static int brl_reset(struct goodix_ts_core *cd, int delay)
 {
 	ts_info("chip_reset");
 
+	/*
+	 * ESD check will fail on firmware reset. When ESD check is failed,
+	 * it will reset firmware again. Skip ESD check to avoid double reset.
+	 */
+	cd->ts_esd.skip_once = true;
+
 	gpio_direction_output(cd->board_data.reset_gpio, 0);
 	usleep_range(2000, 2100);
 	gpio_direction_output(cd->board_data.reset_gpio, 1);

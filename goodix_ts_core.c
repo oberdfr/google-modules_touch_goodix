@@ -1876,7 +1876,12 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	}
 #endif
 
-	ts_esd->irq_status = true;
+	/*
+	 * Since we received an interrupt from touch firmware, it means touch
+	 * firmware is still alive. So skip esd check once.
+	 */
+	ts_esd->skip_once = true;
+
 	core_data->irq_trig_cnt++;
 	/* inform external module */
 	mutex_lock(&goodix_modules.mutex);
@@ -2290,7 +2295,7 @@ static void goodix_ts_esd_work(struct work_struct *work)
 	const struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
 	int ret = 0;
 
-	if (ts_esd->irq_status)
+	if (ts_esd->skip_once)
 		goto exit;
 
 	if (!atomic_read(&ts_esd->esd_on) || atomic_read(&cd->suspended))
@@ -2321,7 +2326,7 @@ static void goodix_ts_esd_work(struct work_struct *work)
 	}
 
 exit:
-	ts_esd->irq_status = false;
+	ts_esd->skip_once = false;
 	if (atomic_read(&ts_esd->esd_on))
 		schedule_delayed_work(&ts_esd->esd_work, 2 * HZ);
 }
