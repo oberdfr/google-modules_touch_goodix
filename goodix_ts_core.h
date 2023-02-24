@@ -686,6 +686,10 @@ struct goodix_ts_hw_ops {
 		struct goodix_ts_core *cd, enum frame_data_type type);
 	int (*get_self_sensing_data)(
 		struct goodix_ts_core *cd, enum frame_data_type type);
+	int (*set_coord_filter_enabled)(
+		struct goodix_ts_core *cd, bool enabled);
+	int (*get_coord_filter_enabled)(
+		struct goodix_ts_core *cd, bool* enabled);
 };
 
 /*

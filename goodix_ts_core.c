@@ -1109,6 +1109,25 @@ static int get_screen_protector_mode(
 	return 0;
 }
 
+static int set_coord_filter_enabled(void *private_data,
+	struct gti_coord_filter_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return cd->hw_ops->set_coord_filter_enabled(cd,
+		cmd->setting == GTI_COORD_FILTER_ENABLE);
+}
+
+static int get_coord_filter_enabled(void *private_data,
+	struct gti_coord_filter_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	bool enabled = false;
+
+	cd->hw_ops->get_coord_filter_enabled(cd, &enabled);
+	cmd->setting = enabled ? GTI_COORD_FILTER_ENABLE : GTI_COORD_FILTER_DISABLE;
+	return 0;
+}
+
 static int set_heatmap_enabled(
 	void *private_data, struct gti_heatmap_cmd *cmd)
 {
@@ -2899,6 +2918,8 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	options->get_palm_mode = get_palm_mode;
 	options->set_screen_protector_mode = set_screen_protector_mode;
 	options->get_screen_protector_mode = get_screen_protector_mode;
+	options->set_coord_filter_enabled = set_coord_filter_enabled;
+	options->get_coord_filter_enabled = get_coord_filter_enabled;
 	options->set_heatmap_enabled = set_heatmap_enabled;
 	options->get_fw_version = gti_get_fw_version;
 	options->set_irq_mode = gti_set_irq_mode;

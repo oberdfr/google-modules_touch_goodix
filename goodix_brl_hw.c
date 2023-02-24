@@ -1616,6 +1616,7 @@ int brl_set_heatmap_enabled(struct goodix_ts_core *cd, bool enabled)
 #define CUSTOM_MODE_MASK_PALM 0x02
 #define CUSTOM_MODE_MASK_GRIP 0x04
 #define CUSTOM_MODE_MASK_SCREEN_PROTECTOR 0x40
+#define CUSTOM_MODE_MASK_COORD_FILTER 0x80
 int brl_set_palm_enabled(struct goodix_ts_core *cd, bool enabled)
 {
 	struct goodix_ts_cmd cmd = { 0 };
@@ -1839,6 +1840,41 @@ exit:
 	return ret;
 }
 
+#define GOODIX_CMD_SET_COORD_FILTER 0xCA
+static int brl_set_coord_filter_enabled(
+	struct goodix_ts_core *cd, bool enabled)
+{
+	struct goodix_ts_cmd cmd = { 0 };
+	int ret = 0;
+
+	cmd.cmd = GOODIX_CMD_SET_COORD_FILTER;
+	cmd.len = 5;
+	cmd.data[0] = enabled ? 0 : 1;
+
+	ret = cd->hw_ops->send_cmd(cd, &cmd);
+	if (ret != 0)
+		ts_err("failed to %s coordinate filter",
+			enabled ? "enable" : "disable");
+
+	return ret;
+}
+
+static int brl_get_coord_filter_enabled(
+	struct goodix_ts_core *cd, bool *enabled)
+{
+	int ret = 0;
+	u8 val;
+
+	ret = cd->hw_ops->read(cd, GOODIX_FEATURE_STATUS_ADDR, &val, 1);
+	if (ret != 0) {
+		ts_err("failed to get coordinate filter enabled, ret: %d", ret);
+		*enabled = false;
+		return ret;
+	}
+	*enabled = (val & CUSTOM_MODE_MASK_COORD_FILTER) == 0;
+	return ret;
+}
+
 static struct goodix_ts_hw_ops brl_hw_ops = {
 	.power_on = brl_power_on,
 	.resume = brl_resume,
@@ -1874,6 +1910,8 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 		brl_get_screen_protector_mode_enabled,
 	.get_mutual_data = brl_get_mutual_data,
 	.get_self_sensing_data = brl_get_self_sensing_data,
+	.set_coord_filter_enabled = brl_set_coord_filter_enabled,
+	.get_coord_filter_enabled = brl_get_coord_filter_enabled,
 };
 
 struct goodix_ts_hw_ops *goodix_get_hw_ops(void)
