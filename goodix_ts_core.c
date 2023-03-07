@@ -1133,6 +1133,34 @@ static int gti_get_fw_version(void *private_data,
 	return ret;
 }
 
+static int gti_set_irq_mode(void *private_data, struct gti_irq_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return cd->hw_ops->irq_enable(cd, cmd->setting == GTI_IRQ_MODE_ENABLE);
+}
+
+static int gti_get_irq_mode(void *private_data, struct gti_irq_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+
+	if (atomic_read(&cd->irq_enabled) == 1)
+		cmd->setting = GTI_IRQ_MODE_ENABLE;
+	else
+		cmd->setting = GTI_IRQ_MODE_DISABLE;
+
+	return 0;
+}
+
+static int gti_reset(void *private_data, struct gti_reset_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+
+	if (cmd->setting == GTI_RESET_MODE_HW || cmd->setting == GTI_RESET_MODE_AUTO)
+		return cd->hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+	else
+		return -EOPNOTSUPP;
+}
+
 static int gti_ping(void *private_data, struct gti_ping_cmd *cmd)
 {
 	struct goodix_ts_core *cd = private_data;
@@ -2854,6 +2882,9 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	options->get_screen_protector_mode = get_screen_protector_mode;
 	options->set_heatmap_enabled = set_heatmap_enabled;
 	options->get_fw_version = gti_get_fw_version;
+	options->set_irq_mode = gti_set_irq_mode;
+	options->get_irq_mode = gti_get_irq_mode;
+	options->reset = gti_reset;
 	options->ping = gti_ping;
 	options->selftest = gti_selftest;
 
