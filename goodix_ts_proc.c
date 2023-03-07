@@ -2594,6 +2594,8 @@ static void goodix_get_fw_status(void)
 
 	cd->hw_ops->read(cd, 0x1021A, &val, 1);
 	index += sprintf(
+		&rbuf[index], "coordfilter_status[%d] ", (val >> 7) & 0x01);
+	index += sprintf(
 		&rbuf[index], "set_highsense_mode[%d] ", (val >> 6) & 0x01);
 	index +=
 		sprintf(&rbuf[index], "set_noise_mode[%d] ", (val >> 4) & 0x03);
