@@ -3487,10 +3487,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_AUTO_TEST, strlen(CMD_AUTO_TEST))) {
-		/*
-		 * b/245485508: WA for self-test.
-		 */
-		raw_data_cnt = 1;
+		raw_data_cnt = 16;
 		noise_data_cnt = 1;
 		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
 		if (!rbuf) {
@@ -4152,10 +4149,7 @@ int driver_test_selftest(char* buf)
 		rbuf = NULL;
 	}
 
-	/*
-	 * b/245485508: WA for self-test.
-	 */
-	raw_data_cnt = 1;
+	raw_data_cnt = 16;
 	noise_data_cnt = 1;
 	rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
 	if (rbuf == NULL) {
