@@ -1192,6 +1192,13 @@ static int gti_selftest(void *private_data, struct gti_selftest_cmd *cmd)
 	return driver_test_selftest(cmd->buffer);
 }
 
+static int gti_get_context_driver(void *private_data,
+	struct gti_context_driver_cmd *cmd)
+{
+	/* There is no context from this driver. */
+	return 0;
+}
+
 #endif
 
 /* prosfs create */
@@ -1907,6 +1914,12 @@ void goodix_ts_report_status(struct goodix_ts_core *core_data,
 		goog_notify_fw_status_changed(core_data->gti,
 			st->grip_type ? GTI_FW_STATUS_GRIP_ENTER : GTI_FW_STATUS_GRIP_EXIT,
 			&status_data);
+	}
+
+	if (st->water_change) {
+		goog_notify_fw_status_changed(core_data->gti,
+			st->water_sta ? GTI_FW_STATUS_WATER_ENTER :
+			GTI_FW_STATUS_WATER_EXIT, &status_data);
 	}
 
 	if (st->noise_lv_change) {
@@ -2927,6 +2940,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	options->reset = gti_reset;
 	options->ping = gti_ping;
 	options->selftest = gti_selftest;
+	options->get_context_driver = gti_get_context_driver;
 
 	cd->gti = goog_touch_interface_probe(
 		cd, cd->bus->dev, cd->input_dev, gti_default_handler, options);
