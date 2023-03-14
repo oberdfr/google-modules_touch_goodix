@@ -1199,6 +1199,13 @@ static int gti_get_context_driver(void *private_data,
 	return 0;
 }
 
+static int gti_set_report_rate(void *private_data,
+	struct gti_report_rate_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return cd->hw_ops->set_report_rate(cd, cmd->setting);
+}
+
 #endif
 
 /* prosfs create */
@@ -2941,6 +2948,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	options->ping = gti_ping;
 	options->selftest = gti_selftest;
 	options->get_context_driver = gti_get_context_driver;
+	options->set_report_rate = gti_set_report_rate;
 
 	cd->gti = goog_touch_interface_probe(
 		cd, cd->bus->dev, cd->input_dev, gti_default_handler, options);

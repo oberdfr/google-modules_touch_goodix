@@ -1875,6 +1875,32 @@ static int brl_get_coord_filter_enabled(
 	return ret;
 }
 
+#define GOODIX_CMD_SET_REPORT_RATE 0x9D
+#define GOODIX_REPORT_RATE_240HZ 0
+#define GOODIX_REPORT_RATE_120HZ 2
+static int brl_set_report_rate(
+	struct goodix_ts_core *cd, u32 rate)
+{
+	struct goodix_ts_cmd cmd = { 0 };
+	int ret = 0;
+
+	ts_info("set report rate %d", rate);
+	if ((rate != 120) && (rate != 240)) {
+		ts_info("Report Rate: %dHz is not support", rate);
+		return -EOPNOTSUPP;
+	}
+
+	cmd.cmd = GOODIX_CMD_SET_REPORT_RATE;
+	cmd.len = 5;
+	cmd.data[0] = rate == 240 ?
+		GOODIX_REPORT_RATE_240HZ : GOODIX_REPORT_RATE_120HZ;
+
+	ret = cd->hw_ops->send_cmd(cd, &cmd);
+	if (ret != 0)
+		ts_err("failed to set report rate");
+	return ret;
+}
+
 static struct goodix_ts_hw_ops brl_hw_ops = {
 	.power_on = brl_power_on,
 	.resume = brl_resume,
@@ -1912,6 +1938,7 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 	.get_self_sensing_data = brl_get_self_sensing_data,
 	.set_coord_filter_enabled = brl_set_coord_filter_enabled,
 	.get_coord_filter_enabled = brl_get_coord_filter_enabled,
+	.set_report_rate = brl_set_report_rate,
 };
 
 struct goodix_ts_hw_ops *goodix_get_hw_ops(void)

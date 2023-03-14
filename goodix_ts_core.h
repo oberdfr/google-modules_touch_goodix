@@ -690,6 +690,7 @@ struct goodix_ts_hw_ops {
 		struct goodix_ts_core *cd, bool enabled);
 	int (*get_coord_filter_enabled)(
 		struct goodix_ts_core *cd, bool* enabled);
+	int (*set_report_rate)(struct goodix_ts_core *cd, u32 rate);
 };
 
 /*
