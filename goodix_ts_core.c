@@ -1368,16 +1368,12 @@ static int goodix_parse_dt(
 	}
 
 	r = of_property_read_u32(node, "goodix,udfps-x", &board_data->udfps_x);
-	if (r) {
-		ts_err("failed to get udfps-x");
-		return r;
-	}
+	if (r)
+		ts_info("undefined udfps-x(optional)!");
 
 	r = of_property_read_u32(node, "goodix,udfps-y", &board_data->udfps_y);
-	if (r) {
-		ts_err("failed to get udfps-y");
-		return r;
-	}
+	if (r)
+		ts_info("undefined udfps-y(optional)!");
 
 	/* get sleep mode flag */
 	board_data->sleep_enable =
