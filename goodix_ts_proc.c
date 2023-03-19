@@ -449,23 +449,23 @@ static int cal_cha_to_gnd_res(int v)
 
 static int malloc_test_resource(void)
 {
-	ts_test = kzalloc(sizeof(*ts_test), GFP_KERNEL);
+	ts_test = vzalloc(sizeof(*ts_test));
 	if (!ts_test)
 		return -ENOMEM;
 	if (raw_data_cnt > 0) {
-		ts_test->rawdata = kcalloc(raw_data_cnt,
-			sizeof(struct ts_test_rawdata), GFP_KERNEL);
+		ts_test->rawdata =
+			vzalloc(raw_data_cnt * sizeof(struct ts_test_rawdata));
 		if (ts_test->rawdata == NULL)
 			return -ENOMEM;
 
-		ts_test->deltadata = kcalloc(raw_data_cnt,
-			sizeof(struct ts_test_rawdata), GFP_KERNEL);
+		ts_test->deltadata =
+			vzalloc(raw_data_cnt * sizeof(struct ts_test_rawdata));
 		if (ts_test->deltadata == NULL)
 			return -ENOMEM;
 	}
 	if (noise_data_cnt > 0) {
-		ts_test->noisedata = kcalloc(noise_data_cnt,
-			sizeof(struct ts_test_rawdata), GFP_KERNEL);
+		ts_test->noisedata = vzalloc(
+			noise_data_cnt * sizeof(struct ts_test_rawdata));
 		if (ts_test->noisedata == NULL)
 			return -ENOMEM;
 	}
@@ -476,10 +476,10 @@ static int malloc_test_resource(void)
 static void release_test_resource(void)
 {
 	if (ts_test) {
-		kfree(ts_test->rawdata);
-		kfree(ts_test->deltadata);
-		kfree(ts_test->noisedata);
-		kfree(ts_test);
+		vfree(ts_test->rawdata);
+		vfree(ts_test->deltadata);
+		vfree(ts_test->noisedata);
+		vfree(ts_test);
 		ts_test = NULL;
 	}
 	raw_data_cnt = 0;
@@ -1210,7 +1210,7 @@ static void seq_stop(struct seq_file *s, void *v)
 {
 	if (s->read_pos >= index) {
 		// ts_info("read_pos:%d", (int)s->read_pos);
-		kfree(rbuf);
+		vfree(rbuf);
 		rbuf = NULL;
 		index = 0;
 		release_test_resource();
@@ -3198,7 +3198,7 @@ static ssize_t driver_test_write(
 		return count;
 	}
 
-	kfree(rbuf);
+	vfree(rbuf);
 	rbuf = NULL;
 	index = 0;
 	release_test_resource();
@@ -3206,13 +3206,13 @@ static ssize_t driver_test_write(
 	ts_info("input cmd[%s]", p);
 
 	if (!strncmp(p, CMD_FW_UPDATE, strlen(CMD_FW_UPDATE))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		goodix_force_update();
 		goto exit;
 	}
 
 	if (!strncmp(p, CMD_GET_VERSION, strlen(CMD_GET_VERSION))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3227,7 +3227,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_GET_RAWDATA, strlen(CMD_GET_RAWDATA))) {
-		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3240,7 +3240,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_GET_BASEDATA, strlen(CMD_GET_BASEDATA))) {
-		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3253,7 +3253,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_GET_DIFFDATA, strlen(CMD_GET_DIFFDATA))) {
-		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3266,7 +3266,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_GET_SELF_RAWDATA, strlen(CMD_GET_SELF_RAWDATA))) {
-		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3279,7 +3279,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_GET_SELF_DIFFDATA, strlen(CMD_GET_SELF_DIFFDATA))) {
-		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3293,7 +3293,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_GET_SELF_BASEDATA, strlen(CMD_GET_SELF_BASEDATA))) {
-		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3307,7 +3307,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_DOUBLE_TAP, strlen(CMD_SET_DOUBLE_TAP))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3338,7 +3338,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_SINGLE_TAP, strlen(CMD_SET_SINGLE_TAP))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3369,7 +3369,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_LONG_PRESS, strlen(CMD_SET_LONG_PRESS))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3400,7 +3400,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_IRQ_ENABLE, strlen(CMD_SET_IRQ_ENABLE))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3429,7 +3429,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_ESD_ENABLE, strlen(CMD_SET_ESD_ENABLE))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3458,7 +3458,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_DEBUG_LOG, strlen(CMD_SET_DEBUG_LOG))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3489,7 +3489,7 @@ static ssize_t driver_test_write(
 	if (!strncmp(p, CMD_AUTO_TEST, strlen(CMD_AUTO_TEST))) {
 		raw_data_cnt = 16;
 		noise_data_cnt = 1;
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3509,7 +3509,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_GET_CHANNEL_NUM, strlen(CMD_GET_CHANNEL_NUM))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3520,7 +3520,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_GET_TX_FREQ, strlen(CMD_GET_TX_FREQ))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3540,7 +3540,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_SENSE_MODE, strlen(CMD_SET_SENSE_MODE))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3576,7 +3576,7 @@ static ssize_t driver_test_write(
 			goto exit;
 		}
 		noise_data_cnt = cmd_val;
-		rbuf = kzalloc(noise_data_cnt * 2000 + 5000, GFP_KERNEL);
+		rbuf = vzalloc(noise_data_cnt * 2000 + 5000);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3610,7 +3610,7 @@ static ssize_t driver_test_write(
 			ts_err("%s: invalid cmd param", CMD_AUTO_NOISE_TEST);
 			goto exit;
 		}
-		rbuf = kzalloc(HUGE_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(HUGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3620,7 +3620,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_GET_PACKAGE_ID, strlen(CMD_GET_PACKAGE_ID))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3638,7 +3638,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_GET_MCU_ID, strlen(CMD_GET_MCU_ID))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3655,7 +3655,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_SCAN_MODE, strlen(CMD_SET_SCAN_MODE))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3681,7 +3681,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_GET_SCAN_MODE, strlen(CMD_GET_SCAN_MODE))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3691,7 +3691,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_CONTINUE_MODE, strlen(CMD_SET_CONTINUE_MODE))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3737,7 +3737,7 @@ static ssize_t driver_test_write(
 			goto exit;
 		}
 		raw_data_cnt = cmd_val;
-		rbuf = kzalloc(raw_data_cnt * 5000 + 10000, GFP_KERNEL);
+		rbuf = vzalloc(raw_data_cnt * 5000 + 10000);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3754,7 +3754,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SELF_OPEN_TEST, strlen(CMD_SELF_OPEN_TEST))) {
-		rbuf = kzalloc(HUGE_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(HUGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3770,7 +3770,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SHORT_TEST, strlen(CMD_SHORT_TEST))) {
-		rbuf = kzalloc(HUGE_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(HUGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3786,7 +3786,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_GET_CONFIG, strlen(CMD_GET_CONFIG))) {
-		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3796,7 +3796,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_GET_FW_STATUS, strlen(CMD_GET_FW_STATUS))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3807,7 +3807,7 @@ static ssize_t driver_test_write(
 
 	if (!strncmp(p, CMD_SET_HIGHSENSE_MODE,
 		    strlen(CMD_SET_HIGHSENSE_MODE))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3833,7 +3833,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_GRIP_DATA, strlen(CMD_SET_GRIP_DATA))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3854,7 +3854,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_GRIP_MODE, strlen(CMD_SET_GRIP_MODE))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3875,7 +3875,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_PALM_MODE, strlen(CMD_SET_PALM_MODE))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3896,7 +3896,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_NOISE_MODE, strlen(CMD_SET_NOISE_MODE))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3917,7 +3917,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_WATER_MODE, strlen(CMD_SET_WATER_MODE))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3938,7 +3938,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_ST_PARAM, strlen(CMD_SET_ST_PARAM))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3955,7 +3955,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_LP_PARAM, strlen(CMD_SET_LP_PARAM))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3972,7 +3972,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_HEATMAP, strlen(CMD_SET_HEATMAP))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3993,7 +3993,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_GET_SELF_COMPEN, strlen(CMD_GET_SELF_COMPEN))) {
-		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4003,7 +4003,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_SET_REPORT_RATE, strlen(CMD_SET_REPORT_RATE))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4024,25 +4024,25 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_GET_DUMP_LOG, strlen(CMD_GET_DUMP_LOG))) {
-		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(LARGE_SIZE);
 		goodix_get_dump_log();
 		goto exit;
 	}
 	if (!strncmp(p, CMD_GET_STYLUS_DATA, strlen(CMD_GET_STYLUS_DATA))) {
-		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(LARGE_SIZE);
 		goodix_get_stylus_data();
 		goto exit;
 	}
 
 
 	if (!strncmp(p, CMD_GET_STYLUS_DATA, strlen(CMD_GET_STYLUS_DATA))) {
-		rbuf = kzalloc(LARGE_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(LARGE_SIZE);
 		goodix_get_stylus_data();
 		goto exit;
 	}
 
 	if (!strncmp(p, CMD_SET_FREQ_INDEX, strlen(CMD_SET_FREQ_INDEX))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		token = strsep(&p, ",");
 		if (!token || !p) {
 			index = sprintf(rbuf, "%s: invalid cmd param\n",
@@ -4059,7 +4059,7 @@ static ssize_t driver_test_write(
 	}
 
 	if (!strncmp(p, CMD_DISABLE_FILTER, strlen(CMD_DISABLE_FILTER))) {
-		rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+		rbuf = vzalloc(SHORT_SIZE);
 		token = strsep(&p, ",");
 		if (!token || !p) {
 			index = sprintf(rbuf, "%s: invalid cmd param\n",
@@ -4075,7 +4075,7 @@ static ssize_t driver_test_write(
 		goto exit;
 	}
 
-	rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+	rbuf = vzalloc(SHORT_SIZE);
 	if (!rbuf) {
 		ts_err("failed to alloc rbuf");
 		goto exit;
@@ -4145,13 +4145,13 @@ int driver_test_selftest(char* buf)
 	release_test_resource();
 	index = 0;
 	if (rbuf != NULL) {
-		kfree(rbuf);
+		vfree(rbuf);
 		rbuf = NULL;
 	}
 
 	raw_data_cnt = 16;
 	noise_data_cnt = 1;
-	rbuf = kzalloc(SHORT_SIZE, GFP_KERNEL);
+	rbuf = vzalloc(SHORT_SIZE);
 	if (rbuf == NULL) {
 		ts_err("failed to alloc rbuf");
 		ret = -ENOMEM;
