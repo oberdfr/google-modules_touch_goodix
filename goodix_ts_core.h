@@ -843,6 +843,7 @@ struct goodix_ts_core {
 	s16 heatmap_diff[GOODIX_MAX_DRV_NUM * GOODIX_MAX_SEN_NUM];
 	s16 heatmap_selfdiff[GOODIX_MAX_DRV_NUM + GOODIX_MAX_SEN_NUM];
 	 */
+	struct completion init_stage2_complete;
 	struct touch_apis_data apis_data;
 	struct workqueue_struct *event_wq;
 	struct delayed_work monitor_gesture_work;
