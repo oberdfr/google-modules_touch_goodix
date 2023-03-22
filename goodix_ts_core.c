@@ -969,8 +969,7 @@ static int get_mutual_sensor_data(
 		cmd->buffer = (u8 *)cd->mutual_data;
 		cmd->size = tx * rx * sizeof(uint16_t);
 	} else {
-		/* disable irq & close esd */
-		cd->hw_ops->irq_enable(cd, false);
+		/* close esd */
 		goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
 
 		ret = -EINVAL;
@@ -987,8 +986,7 @@ static int get_mutual_sensor_data(
 			cmd->size = tx * rx * sizeof(uint16_t);
 		}
 
-		/* enable irq & esd */
-		cd->hw_ops->irq_enable(cd, true);
+		/* enable esd */
 		goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
 	}
 	return ret;
@@ -1111,6 +1109,25 @@ static int get_screen_protector_mode(
 	return 0;
 }
 
+static int set_coord_filter_enabled(void *private_data,
+	struct gti_coord_filter_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return cd->hw_ops->set_coord_filter_enabled(cd,
+		cmd->setting == GTI_COORD_FILTER_ENABLE);
+}
+
+static int get_coord_filter_enabled(void *private_data,
+	struct gti_coord_filter_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	bool enabled = false;
+
+	cd->hw_ops->get_coord_filter_enabled(cd, &enabled);
+	cmd->setting = enabled ? GTI_COORD_FILTER_ENABLE : GTI_COORD_FILTER_DISABLE;
+	return 0;
+}
+
 static int set_heatmap_enabled(
 	void *private_data, struct gti_heatmap_cmd *cmd)
 {
@@ -1135,6 +1152,34 @@ static int gti_get_fw_version(void *private_data,
 	return ret;
 }
 
+static int gti_set_irq_mode(void *private_data, struct gti_irq_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return cd->hw_ops->irq_enable(cd, cmd->setting == GTI_IRQ_MODE_ENABLE);
+}
+
+static int gti_get_irq_mode(void *private_data, struct gti_irq_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+
+	if (atomic_read(&cd->irq_enabled) == 1)
+		cmd->setting = GTI_IRQ_MODE_ENABLE;
+	else
+		cmd->setting = GTI_IRQ_MODE_DISABLE;
+
+	return 0;
+}
+
+static int gti_reset(void *private_data, struct gti_reset_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+
+	if (cmd->setting == GTI_RESET_MODE_HW || cmd->setting == GTI_RESET_MODE_AUTO)
+		return cd->hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+	else
+		return -EOPNOTSUPP;
+}
+
 static int gti_ping(void *private_data, struct gti_ping_cmd *cmd)
 {
 	struct goodix_ts_core *cd = private_data;
@@ -1145,6 +1190,20 @@ static int gti_selftest(void *private_data, struct gti_selftest_cmd *cmd)
 {
 	cmd->result = GTI_SELFTEST_RESULT_DONE;
 	return driver_test_selftest(cmd->buffer);
+}
+
+static int gti_get_context_driver(void *private_data,
+	struct gti_context_driver_cmd *cmd)
+{
+	/* There is no context from this driver. */
+	return 0;
+}
+
+static int gti_set_report_rate(void *private_data,
+	struct gti_report_rate_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return cd->hw_ops->set_report_rate(cd, cmd->setting);
 }
 
 #endif
@@ -1840,10 +1899,13 @@ void goodix_ts_report_status(struct goodix_ts_core *core_data,
 		st->grip_change, st->noise_lv_change, st->palm_change,
 		st->soft_reset, st->base_update, st->hop_change,
 		st->water_change);
-	ts_info("water_status[%d] before_factorA[%d] after_factorA[%d] base_update_type[0x%x] soft_reset_type[0x%x] palm_status[%d] noise_lv[%d] grip_type[%d] event_id[%d] clear_count[%d]",
-		st->water_sta, st->before_factorA, st->after_factorA,
-		st->base_update_type, st->soft_reset_type, st->palm_sta,
-		st->noise_lv, st->grip_type, st->event_id, ts_event->clear_count);
+	ts_info("water_status[%d] before_factorA[%d] after_factorA[%d]" \
+		" base_update_type[0x%x] soft_reset_type[0x%x] palm_status[%d]" \
+		" noise_lv[%d] grip_type[%d] event_id[%d] clear_count1[%d]" \
+		" clear_count2[%d]", st->water_sta, st->before_factorA,
+		st->after_factorA, st->base_update_type, st->soft_reset_type,
+		st->palm_sta, st->noise_lv, st->grip_type, st->event_id,
+		ts_event->clear_count1, ts_event->clear_count2);
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 	if (st->soft_reset)
 		goog_notify_fw_status_changed(core_data->gti, GTI_FW_STATUS_RESET,
@@ -1859,6 +1921,12 @@ void goodix_ts_report_status(struct goodix_ts_core *core_data,
 		goog_notify_fw_status_changed(core_data->gti,
 			st->grip_type ? GTI_FW_STATUS_GRIP_ENTER : GTI_FW_STATUS_GRIP_EXIT,
 			&status_data);
+	}
+
+	if (st->water_change) {
+		goog_notify_fw_status_changed(core_data->gti,
+			st->water_sta ? GTI_FW_STATUS_WATER_ENTER :
+			GTI_FW_STATUS_WATER_EXIT, &status_data);
 	}
 
 	if (st->noise_lv_change) {
@@ -1889,12 +1957,17 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
 	ret = goog_pm_wake_lock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ, true);
 	if(ret < 0) {
-		ts_err("Error while obtaining IRQ wakelock: %d!\n", ret);
+		ts_info("Error while obtaining IRQ wakelock: %d!\n", ret);
 		return IRQ_HANDLED;
 	}
 #endif
 
-	ts_esd->irq_status = true;
+	/*
+	 * Since we received an interrupt from touch firmware, it means touch
+	 * firmware is still alive. So skip esd check once.
+	 */
+	ts_esd->skip_once = true;
+
 	core_data->irq_trig_cnt++;
 	/* inform external module */
 	mutex_lock(&goodix_modules.mutex);
@@ -2308,7 +2381,7 @@ static void goodix_ts_esd_work(struct work_struct *work)
 	const struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
 	int ret = 0;
 
-	if (ts_esd->irq_status)
+	if (ts_esd->skip_once)
 		goto exit;
 
 	if (!atomic_read(&ts_esd->esd_on) || atomic_read(&cd->suspended))
@@ -2339,7 +2412,7 @@ static void goodix_ts_esd_work(struct work_struct *work)
 	}
 
 exit:
-	ts_esd->irq_status = false;
+	ts_esd->skip_once = false;
 	if (atomic_read(&ts_esd->esd_on))
 		schedule_delayed_work(&ts_esd->esd_work, 2 * HZ);
 }
@@ -2483,7 +2556,7 @@ static int goodix_ts_suspend(struct goodix_ts_core *core_data)
 	ts_info("Suspend start");
 	atomic_set(&core_data->suspended, 1);
 	/* disable irq */
-	hw_ops->irq_enable(core_data, false);
+	hw_ops->disable_irq_nosync(core_data);
 
 	/*
 	 * notify suspend event, inform the esd protector
@@ -2865,10 +2938,17 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	options->get_palm_mode = get_palm_mode;
 	options->set_screen_protector_mode = set_screen_protector_mode;
 	options->get_screen_protector_mode = get_screen_protector_mode;
+	options->set_coord_filter_enabled = set_coord_filter_enabled;
+	options->get_coord_filter_enabled = get_coord_filter_enabled;
 	options->set_heatmap_enabled = set_heatmap_enabled;
 	options->get_fw_version = gti_get_fw_version;
+	options->set_irq_mode = gti_set_irq_mode;
+	options->get_irq_mode = gti_get_irq_mode;
+	options->reset = gti_reset;
 	options->ping = gti_ping;
 	options->selftest = gti_selftest;
+	options->get_context_driver = gti_get_context_driver;
+	options->set_report_rate = gti_set_report_rate;
 
 	cd->gti = goog_touch_interface_probe(
 		cd, cd->bus->dev, cd->input_dev, gti_default_handler, options);

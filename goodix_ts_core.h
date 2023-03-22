@@ -47,11 +47,16 @@
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 #include <goog_touch_interface.h>
 #endif
+#if IS_ENABLED(CONFIG_VH_SYSTRACE)
 #include "../../../gs-google/drivers/soc/google/vh/kernel/systrace.h"
+#else
+#define ATRACE_BEGIN(f)
+#define ATRACE_END()
+#endif
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.2.2"
+#define GOODIX_DRIVER_VERSION "v1.2.4"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -500,13 +505,16 @@ struct goodix_pen_data {
 
 /*
  * struct goodix_ts_event - touch event struct
+ * @clear_count1: clear count for old firmware
+ * @clear_count2: clear count for latest firmware
  * @event_type: touch event type, touch data or
  *	request event
  * @event_data: event data
  */
 struct goodix_ts_event {
 	enum ts_event_type event_type;
-	u8 clear_count;
+	u8 clear_count1;
+	u8 clear_count2;
 	u8 fp_flag;	 /* finger print DOWN flag */
 	u8 request_code; /* represent the request type */
 	u8 request_data[GOODIX_REQUEST_DATA_LEN];
@@ -525,7 +533,10 @@ struct goodix_ts_event_data {
 	u8 int_count;
 	u8 reserved3;
 	u8 reserved4 : 4;
-	u8 clear_count : 4;
+	u8 clear_count1 : 4;
+	u8 reserved5;
+	u8 reserved6 : 4;
+	u8 clear_count2 : 4;
 };
 
 struct goodix_ts_request_event_data {
@@ -557,8 +568,10 @@ struct goodix_ts_touch_event_data {
 	u8 reset_int : 1;
 	u8 custom_coor_info_flag : 1;
 	u8 reserved3 : 3;
-	u8 clear_count : 4;
-	u16 reserved4;
+	u8 clear_count1 : 4;
+	u8 reserved4;
+	u8 reserved5 : 4;
+	u8 clear_count2 : 4;
 	u16 checksum;
 	u8 data[0];
 };
@@ -634,6 +647,7 @@ struct goodix_ts_hw_ops {
 	int (*gesture)(struct goodix_ts_core *cd, int gesture_type);
 	int (*reset)(struct goodix_ts_core *cd, int delay_ms);
 	int (*irq_enable)(struct goodix_ts_core *cd, bool enable);
+	int (*disable_irq_nosync)(struct goodix_ts_core *cd);
 	int (*read)(struct goodix_ts_core *cd, unsigned int addr,
 		unsigned char *data, unsigned int len);
 	int (*read_fast)(struct goodix_ts_core *cd, unsigned int addr,
@@ -672,6 +686,11 @@ struct goodix_ts_hw_ops {
 		struct goodix_ts_core *cd, enum frame_data_type type);
 	int (*get_self_sensing_data)(
 		struct goodix_ts_core *cd, enum frame_data_type type);
+	int (*set_coord_filter_enabled)(
+		struct goodix_ts_core *cd, bool enabled);
+	int (*get_coord_filter_enabled)(
+		struct goodix_ts_core *cd, bool* enabled);
+	int (*set_report_rate)(struct goodix_ts_core *cd, u32 rate);
 };
 
 /*
@@ -679,9 +698,10 @@ struct goodix_ts_hw_ops {
  * @esd_work: esd delayed work
  * @esd_on: 1 - turn on esd protection, 0 - turn
  *  off esd protection
+ * @skip_once: skip once if the check is no need this time.
  */
 struct goodix_ts_esd {
-	bool irq_status;
+	bool skip_once;
 	atomic_t esd_on;
 	struct delayed_work esd_work;
 	struct notifier_block esd_notifier;

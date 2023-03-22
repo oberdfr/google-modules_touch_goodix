@@ -324,6 +324,12 @@ static int brl_reset(struct goodix_ts_core *cd, int delay)
 {
 	ts_info("chip_reset");
 
+	/*
+	 * ESD check will fail on firmware reset. When ESD check is failed,
+	 * it will reset firmware again. Skip ESD check to avoid double reset.
+	 */
+	cd->ts_esd.skip_once = true;
+
 	gpio_direction_output(cd->board_data.reset_gpio, 0);
 	usleep_range(2000, 2100);
 	gpio_direction_output(cd->board_data.reset_gpio, 1);
@@ -344,11 +350,20 @@ static int brl_irq_enable(struct goodix_ts_core *cd, bool enable)
 	}
 
 	if (!enable && atomic_cmpxchg(&cd->irq_enabled, 1, 0)) {
-		disable_irq_nosync(cd->irq);
+		disable_irq(cd->irq);
 		ts_debug("Irq disabled");
 		return 0;
 	}
 	// ts_info("warnning: irq deepth inbalance!");
+	return 0;
+}
+
+static int brl_disable_irq_nosync(struct goodix_ts_core *cd)
+{
+	if (atomic_cmpxchg(&cd->irq_enabled, 1, 0)) {
+		disable_irq_nosync(cd->irq);
+		ts_debug("Irq disabled");
+	}
 	return 0;
 }
 
@@ -1227,7 +1242,8 @@ static int brl_event_handler(
 	memset(ts_event, 0, sizeof(*ts_event));
 
 	ts_event->event_type = EVENT_INVALID;
-	ts_event->clear_count = event_data->clear_count;
+	ts_event->clear_count1 = event_data->clear_count1;
+	ts_event->clear_count2 = event_data->clear_count2;
 	/* read status event */
 	if (event_data->status_changed) {
 		hw_ops->read(cd, 0x1021C, (u8 *)&ts_event->status_data,
@@ -1605,6 +1621,7 @@ int brl_set_heatmap_enabled(struct goodix_ts_core *cd, bool enabled)
 #define CUSTOM_MODE_MASK_PALM 0x02
 #define CUSTOM_MODE_MASK_GRIP 0x04
 #define CUSTOM_MODE_MASK_SCREEN_PROTECTOR 0x40
+#define CUSTOM_MODE_MASK_COORD_FILTER 0x80
 int brl_set_palm_enabled(struct goodix_ts_core *cd, bool enabled)
 {
 	struct goodix_ts_cmd cmd = { 0 };
@@ -1828,6 +1845,67 @@ exit:
 	return ret;
 }
 
+#define GOODIX_CMD_SET_COORD_FILTER 0xCA
+static int brl_set_coord_filter_enabled(
+	struct goodix_ts_core *cd, bool enabled)
+{
+	struct goodix_ts_cmd cmd = { 0 };
+	int ret = 0;
+
+	cmd.cmd = GOODIX_CMD_SET_COORD_FILTER;
+	cmd.len = 5;
+	cmd.data[0] = enabled ? 0 : 1;
+
+	ret = cd->hw_ops->send_cmd(cd, &cmd);
+	if (ret != 0)
+		ts_err("failed to %s coordinate filter",
+			enabled ? "enable" : "disable");
+
+	return ret;
+}
+
+static int brl_get_coord_filter_enabled(
+	struct goodix_ts_core *cd, bool *enabled)
+{
+	int ret = 0;
+	u8 val;
+
+	ret = cd->hw_ops->read(cd, GOODIX_FEATURE_STATUS_ADDR, &val, 1);
+	if (ret != 0) {
+		ts_err("failed to get coordinate filter enabled, ret: %d", ret);
+		*enabled = false;
+		return ret;
+	}
+	*enabled = (val & CUSTOM_MODE_MASK_COORD_FILTER) == 0;
+	return ret;
+}
+
+#define GOODIX_CMD_SET_REPORT_RATE 0x9D
+#define GOODIX_REPORT_RATE_240HZ 0
+#define GOODIX_REPORT_RATE_120HZ 2
+static int brl_set_report_rate(
+	struct goodix_ts_core *cd, u32 rate)
+{
+	struct goodix_ts_cmd cmd = { 0 };
+	int ret = 0;
+
+	ts_info("set report rate %d", rate);
+	if ((rate != 120) && (rate != 240)) {
+		ts_info("Report Rate: %dHz is not support", rate);
+		return -EOPNOTSUPP;
+	}
+
+	cmd.cmd = GOODIX_CMD_SET_REPORT_RATE;
+	cmd.len = 5;
+	cmd.data[0] = rate == 240 ?
+		GOODIX_REPORT_RATE_240HZ : GOODIX_REPORT_RATE_120HZ;
+
+	ret = cd->hw_ops->send_cmd(cd, &cmd);
+	if (ret != 0)
+		ts_err("failed to set report rate");
+	return ret;
+}
+
 static struct goodix_ts_hw_ops brl_hw_ops = {
 	.power_on = brl_power_on,
 	.resume = brl_resume,
@@ -1835,6 +1913,7 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 	.gesture = brl_gesture,
 	.reset = brl_reset,
 	.irq_enable = brl_irq_enable,
+	.disable_irq_nosync = brl_disable_irq_nosync,
 	.read = brl_read,
 	.read_fast = brl_read_fast,
 	.write = brl_write,
@@ -1862,6 +1941,9 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 		brl_get_screen_protector_mode_enabled,
 	.get_mutual_data = brl_get_mutual_data,
 	.get_self_sensing_data = brl_get_self_sensing_data,
+	.set_coord_filter_enabled = brl_set_coord_filter_enabled,
+	.get_coord_filter_enabled = brl_get_coord_filter_enabled,
+	.set_report_rate = brl_set_report_rate,
 };
 
 struct goodix_ts_hw_ops *goodix_get_hw_ops(void)
