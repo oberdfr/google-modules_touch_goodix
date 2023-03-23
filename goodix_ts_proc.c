@@ -6,6 +6,8 @@
 
 #define CMD_FW_UPDATE "fw_update"
 #define CMD_AUTO_TEST "auto_test"
+#define CMD_STYLUS_RAW_TEST "stylus_raw_test"
+#define CMD_STYLUS_OSC_TEST "stylus_osc_test"
 #define CMD_OPEN_TEST "open_test"
 #define CMD_SELF_OPEN_TEST "self_open_test"
 #define CMD_NOISE_TEST "noise_test"
@@ -53,6 +55,7 @@
 #define CMD_DISABLE_FILTER "disable_filter"
 
 const static char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
+	CMD_STYLUS_RAW_TEST, CMD_STYLUS_OSC_TEST,
 	CMD_SELF_OPEN_TEST, CMD_NOISE_TEST, CMD_AUTO_NOISE_TEST, CMD_SHORT_TEST,
 	CMD_GET_PACKAGE_ID, CMD_GET_MCU_ID, CMD_GET_VERSION, CMD_GET_RAWDATA,
 	CMD_GET_DIFFDATA, CMD_GET_BASEDATA, CMD_GET_SELF_RAWDATA,
@@ -77,6 +80,10 @@ const static char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 #define CSV_TP_SHORT_THRESHOLD "shortciurt_threshold"
 #define CSV_TP_SPECIAL_SELFRAW_MAX "special_selfraw_max"
 #define CSV_TP_SPECIAL_SELFRAW_MIN "special_selfraw_min"
+#define CSV_TP_SPECIAL_STYLUSRAW_MAX "special_stylusraw_max"
+#define CSV_TP_SPECIAL_STYLUSRAW_MIN "special_stylusraw_min"
+#define CSV_TP_SPECIAL_FREQ_STYLUSRAW_MAX "special_freq_stylusraw_max"
+#define CSV_TP_SPECIAL_FREQ_STYLUSRAW_MIN "special_freq_stylusraw_min"
 #define CSV_TP_NOISE_LIMIT "noise_data_limit"
 #define CSV_TP_SELFNOISE_LIMIT "noise_selfdata_limit"
 #define CSV_TP_TEST_CONFIG "test_config"
@@ -104,6 +111,7 @@ static uint32_t index;
 #define GTP_SHORT_TEST 5
 #define GTP_SELFCAP_TEST 6
 #define GTP_SELFNOISE_TEST 7
+#define GTP_STYLUS_RAW_TEST 8
 #define MAX_TEST_ITEMS 10 /* 0P-1P-2P-3P-5P total test items */
 
 #define TEST_OK 1
@@ -380,6 +388,11 @@ struct ts_test_self_rawdata {
 	u32 size;
 };
 
+struct ts_test_stylus_rawdata {
+	s16 data[MAX_DRV_NUM + MAX_SEN_NUM];
+	u32 size;
+};
+
 static int raw_data_cnt;
 static int noise_data_cnt;
 
@@ -391,6 +404,8 @@ struct goodix_ts_test {
 	s16 deviation_limits[MAX_DRV_NUM * MAX_SEN_NUM];
 	s16 self_max_limits[MAX_DRV_NUM + MAX_SEN_NUM];
 	s16 self_min_limits[MAX_DRV_NUM + MAX_SEN_NUM];
+	s16 stylus_min_limits[MAX_DRV_NUM + MAX_SEN_NUM];
+	s16 stylus_max_limits[MAX_DRV_NUM + MAX_SEN_NUM];
 	s16 noise_threshold;
 	s16 short_threshold;
 	s16 r_drv_drv_threshold;
@@ -401,10 +416,12 @@ struct goodix_ts_test {
 	s16 avdd_value;
 
 	int freq;
+	int stylus_test_freq;
 	struct ts_test_rawdata *rawdata;
 	struct ts_test_rawdata *deltadata;
 	struct ts_test_rawdata *noisedata;
 	struct ts_test_self_rawdata selfrawdata;
+	struct ts_test_stylus_rawdata *stylusraw;
 	struct ts_short_test_info *params_info;
 	struct ts_short_res short_res;
 };
@@ -461,6 +478,11 @@ static int malloc_test_resource(void)
 			vzalloc(raw_data_cnt * sizeof(struct ts_test_rawdata));
 		if (ts_test->deltadata == NULL)
 			return -ENOMEM;
+
+		ts_test->stylusraw =
+			vzalloc(raw_data_cnt * sizeof(struct ts_test_stylus_rawdata));
+		if (ts_test->stylusraw == NULL)
+			return -ENOMEM;
 	}
 	if (noise_data_cnt > 0) {
 		ts_test->noisedata = vzalloc(
@@ -478,6 +500,7 @@ static void release_test_resource(void)
 		vfree(ts_test->rawdata);
 		vfree(ts_test->deltadata);
 		vfree(ts_test->noisedata);
+		vfree(ts_test->stylusraw);
 		vfree(ts_test);
 		ts_test = NULL;
 	}
@@ -1312,6 +1335,17 @@ static void goodix_save_header(struct goodix_ts_core *cd)
 				"<Item name=\"Short Test\" result=\"OK\"/>\n");
 		}
 	}
+
+	if (ts_test->item[GTP_STYLUS_RAW_TEST]) {
+		if (ts_test->result[GTP_STYLUS_RAW_TEST] == TEST_NG) {
+			index += sprintf(&rbuf[index],
+				"<Item name=\"Stylus Rawdata MAX/MIN Test\" result=\"NG\"/>\n");
+		} else {
+			index += sprintf(&rbuf[index],
+				"<Item name=\"Stylus Rawdata MAX/MIN Test\" result=\"OK\"/>\n");
+		}
+	}
+
 	index += sprintf(&rbuf[index], "</ItemList>\n");
 }
 
@@ -1556,6 +1590,27 @@ static void goodix_save_data(struct goodix_ts_core *cd)
 			index += sprintf(&rbuf[index], "\n");
 		index += sprintf(&rbuf[index], "</DataContent>\n");
 		index += sprintf(&rbuf[index], "</selfDataRecord>\n");
+	}
+
+    /* save stylus rawdata */
+	if (ts_test->item[GTP_STYLUS_RAW_TEST]) {
+		index += sprintf(&rbuf[index], "<StylusRawDataRecord>\n");
+		for (i = 0; i < raw_data_cnt; i++) {
+			goodix_data_cal(ts_test->stylusraw[i].data, tx + rx, stat_result);
+			index += sprintf(&rbuf[index],
+			"<DataContent No.=\"%d\" DataCount=\"%d\" Maximum=\"%d\" Minimum=\"%d\" Average=\"%d\">\n",
+			i, tx + rx, stat_result[1], stat_result[2], stat_result[0]);
+			for (j = 0; j < tx + rx; j++) {
+				index += sprintf(&rbuf[index],
+					"%d,", ts_test->stylusraw[i].data[j]);
+				if ((j + 1) % tx == 0)
+					index += sprintf(&rbuf[index], "\n");
+			}
+			if ((tx + rx) % tx != 0)
+				index += sprintf(&rbuf[index], "\n");
+			index += sprintf(&rbuf[index], "</DataContent>\n");
+		}
+		index += sprintf(&rbuf[index], "</StylusRawDataRecord>\n");
 	}
 
 	index += sprintf(&rbuf[index], "</DataRecord>\n");
@@ -1846,6 +1901,28 @@ static int goodix_obtain_testlimits(struct goodix_ts_core *cd)
 			ts_test->params_info = &params_brd;
 		else if (cd->bus->ic_type == IC_TYPE_NOTTINGHAM)
 			ts_test->params_info = &params_not;
+	}
+
+	if (ts_test->item[GTP_STYLUS_RAW_TEST]) {
+		if (ts_test->stylus_test_freq > 0) {
+			raw_limit_min = CSV_TP_SPECIAL_FREQ_STYLUSRAW_MIN;
+			raw_limit_max = CSV_TP_SPECIAL_FREQ_STYLUSRAW_MAX;
+		} else {
+			raw_limit_min = CSV_TP_SPECIAL_STYLUSRAW_MIN;
+			raw_limit_max = CSV_TP_SPECIAL_STYLUSRAW_MAX;
+		}
+		ret = parse_csvfile(temp_buf, firmware->size, raw_limit_min,
+		ts_test->stylus_min_limits, 1, tx + rx);
+		if (ret < 0) {
+			ts_err("Failed get %s", raw_limit_min);
+			goto exit_free;
+		}
+		ret = parse_csvfile(temp_buf, firmware->size, raw_limit_max,
+		ts_test->stylus_max_limits, 1, tx + rx);
+		if (ret < 0) {
+			ts_err("Failed get %s", raw_limit_max);
+			goto exit_free;
+		}
 	}
 
 exit_free:
@@ -2176,6 +2253,211 @@ exit:
 	return ret;
 }
 
+static int goodix_stylus_rawdata_test(struct goodix_ts_core *cd)
+{
+	struct goodix_ts_cmd temp_cmd;
+	int tmp_freq = ts_test->stylus_test_freq / 61;
+	int tx = cd->ic_info.parm.drv_num;
+	int rx = cd->ic_info.parm.sen_num;
+	u32 sync_addr = cd->ic_info.misc.frame_data_addr;
+	struct goodix_frame_head frame_head;
+	u32 raw_addr;
+	int retry;
+	int ret;
+	int i, j;
+	int tmp_val;
+	int err_cnt = 0;
+	u8 val;
+
+	raw_addr = cd->ic_info.misc.frame_data_addr +
+		cd->ic_info.misc.frame_data_head_len +
+		cd->ic_info.misc.fw_attr_len +
+		cd->ic_info.misc.fw_log_len + 28;
+
+	temp_cmd.len = 7;
+	temp_cmd.cmd = 0x65;
+	temp_cmd.data[0] = 1;
+	temp_cmd.data[1] = tmp_freq & 0xFF;
+	temp_cmd.data[2] = (tmp_freq >> 8) & 0xFF;
+	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
+	if (ret < 0) {
+		ts_err("send stylus test cmd failed");
+		goto exit;
+	}
+	temp_cmd.len = 5;
+	temp_cmd.cmd = 0x90;
+	temp_cmd.data[0] = 0x81;
+	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
+	if (ret < 0) {
+		ts_err("send rawdata cmd failed");
+		goto exit;
+	}
+
+	/* discard the first few frames */
+	for (i = 0; i < 3; i++) {
+		val = 0;
+		cd->hw_ops->write(cd, sync_addr, &val, 1);
+		usleep_range(20000, 21000);
+	}
+
+	for (i = 0; i < raw_data_cnt; i++) {
+		val = 0;
+		cd->hw_ops->write(cd, sync_addr, &val, 1);
+		retry = 20;
+		while (retry--) {
+			usleep_range(5000, 5100);
+			cd->hw_ops->read(cd, sync_addr, (u8 *)&frame_head, sizeof(frame_head));
+			if (frame_head.sync & 0x80)
+				break;
+		}
+		if (retry < 0) {
+			ts_err("rawdata is not ready val:0x%02x i:%d, exit", frame_head.sync, i);
+			ret = -EINVAL;
+			goto exit;
+		}
+		if (!(frame_head.data_en & STYLUS_PACK_EN)) {
+			ts_err("frame has no stylus pack data");
+			ret = -EINVAL;
+			goto exit;
+		}
+
+		cd->hw_ops->read(cd, raw_addr, (u8 *)ts_test->stylusraw[i].data, (tx + rx) * 2);
+	}
+
+    /* analysis results */
+	for (i = 0; i < raw_data_cnt; i++) {
+		for (j = 0; j < tx + rx; j++) {
+			tmp_val = ts_test->stylusraw[i].data[j];
+			if (tmp_val > ts_test->stylus_max_limits[j] ||
+				tmp_val < ts_test->stylus_min_limits[j]) {
+				ts_err("stylusraw[%d] out of range[%d %d]",
+				tmp_val, ts_test->stylus_min_limits[j],
+				ts_test->stylus_max_limits[j]);
+				err_cnt++;
+			}
+		}
+	}
+
+	if (err_cnt > 0) {
+		ret = -EINVAL;
+	} else {
+		ret = 0;
+		ts_test->result[GTP_STYLUS_RAW_TEST] = TEST_OK;
+	}
+
+exit:
+	return ret;
+}
+
+#pragma pack(1)
+struct clk_test_parm {
+	union {
+		struct {
+			u8 gio;
+			u8 div:2;           /* 0:no div 1:8 div */
+			u8 is_64m:1;       /* 0: not 64M osc 1:64M osc */
+			u8 en:1;
+			u8 pll_prediv:2;
+			u8 pll_fbdiv:2;
+			u8 trigger_mode;    /* 0:rising 1:high 2:falling 3:low */
+			u16 clk_in_num;     /* collect clk num (1-1022) */
+			u16 checksum;
+		};
+		u8 buf[7];
+	};
+};
+#pragma pack()
+
+static int goodix_stylus_osc_test(struct goodix_ts_core *cd)
+{
+	u8 prepare_cmd[] = {0x00, 0x00, 0x04, 0x0D, 0x11, 0x00};
+	u8 start_cmd[] = {0x00, 0x00, 0x04, 0x0E, 0x12, 0x00};
+	u32 cmd_addr = cd->ic_info.misc.cmd_addr;
+	u32 frame_buf_addr = cd->ic_info.misc.fw_buffer_addr;
+	struct clk_test_parm clk_parm;
+	u8 rcv_buf[10];
+	u64 cal_freq;
+	u64 main_clk;
+	u64 clk_in_cnt;
+	u64 clk_osc_cnt;
+	u64 pen_osc_clk = 16000000;
+	u64 freq_delta;
+	int retry;
+	int ret;
+
+	cd->hw_ops->write(cd, cmd_addr, prepare_cmd, sizeof(prepare_cmd));
+	retry = 10;
+	while (retry--) {
+		msleep(20);
+		cd->hw_ops->read(cd, cmd_addr, rcv_buf, 2);
+		if (rcv_buf[0] == 0x08 && rcv_buf[1] == 0x80)
+			break;
+	}
+	if (retry < 0) {
+		ts_err("switch osc test mode failed, sta[%x] ack[%x]",
+				rcv_buf[0], rcv_buf[1]);
+		ret = -1;
+		goto exit;
+	}
+
+	clk_parm.gio = 19;
+	clk_parm.div = 1;
+	clk_parm.is_64m = 0;
+	clk_parm.en = 0;
+	clk_parm.pll_prediv = 0;
+	clk_parm.pll_fbdiv = 0;
+	clk_parm.trigger_mode = 0;
+	clk_parm.clk_in_num = 1000;
+	goodix_append_checksum(clk_parm.buf, sizeof(clk_parm) - 2, CHECKSUM_MODE_U8_LE);
+	cd->hw_ops->write(cd, frame_buf_addr, clk_parm.buf, sizeof(clk_parm));
+
+	cd->hw_ops->write(cd, cmd_addr, start_cmd, sizeof(start_cmd));
+	retry = 20;
+	while (retry--) {
+		msleep(50);
+		cd->hw_ops->read(cd, cmd_addr, rcv_buf, 2);
+		if (rcv_buf[0] == 0x0B && rcv_buf[1] == 0x80)
+			break;
+	}
+	if (retry < 0) {
+		ts_err("wait osc test result failed, sta[%x] ack[%x]",
+				rcv_buf[0], rcv_buf[1]);
+		ret = -1;
+		goto exit;
+	}
+
+	cd->hw_ops->read(cd, frame_buf_addr + sizeof(clk_parm), rcv_buf, sizeof(rcv_buf));
+	if (checksum_cmp(rcv_buf, sizeof(rcv_buf), CHECKSUM_MODE_U8_LE)) {
+		ts_err("osc test result checksum error, [%*ph]",
+				(int)sizeof(rcv_buf), rcv_buf);
+		ret = -1;
+		goto exit;
+	}
+
+	main_clk = le16_to_cpup((__le16 *)&rcv_buf[0]);
+	clk_in_cnt = le16_to_cpup((__le16 *)&rcv_buf[2]);
+	clk_osc_cnt = le32_to_cpup((__le32 *)&rcv_buf[4]);
+	cal_freq = clk_in_cnt * main_clk * 1000000 * 8 / clk_osc_cnt;
+	ts_info("main_clk:%lldM clk_in_cnt:%lld clk_osc_cnt:%lld cal_freq:%lld",
+			main_clk, clk_in_cnt, clk_osc_cnt, cal_freq);
+
+	if (pen_osc_clk > cal_freq)
+		freq_delta = pen_osc_clk - cal_freq;
+	else
+		freq_delta = cal_freq - pen_osc_clk;
+	if (freq_delta * 100 / pen_osc_clk > 2) {
+		ts_err("osc clk test failed");
+		ret = -1;
+	} else {
+		ts_info("osc clk test pass");
+		ret = 0;
+	}
+
+exit:
+	cd->hw_ops->reset(cd, 100);
+	return ret;
+}
+
 static int goodix_auto_test(struct goodix_ts_core *cd, bool is_brief)
 {
 	struct goodix_ts_cmd temp_cmd;
@@ -2217,6 +2499,14 @@ static int goodix_auto_test(struct goodix_ts_core *cd, bool is_brief)
 
 	if (ts_test->item[GTP_SHORT_TEST]) {
 		goodix_shortcircut_test(cd);
+		cd->hw_ops->reset(cd, 100);
+	}
+
+	if (ts_test->item[GTP_STYLUS_RAW_TEST]) {
+		ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
+		if (ret < 0)
+			ts_err("enter test mode failed");
+		goodix_stylus_rawdata_test(cd);
 		cd->hw_ops->reset(cd, 100);
 	}
 
@@ -4096,6 +4386,47 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 			goto exit;
 		}
 		goodix_disable_coor_filter(cd, cmd_val);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_STYLUS_RAW_TEST, strlen(CMD_STYLUS_RAW_TEST))) {
+		cmd_val = 0;
+		raw_data_cnt = 16;
+		rbuf = vzalloc(HUGE_SIZE);
+		if (!rbuf) {
+			ts_err("failed to alloc rbuf");
+			goto exit;
+		}
+		token = strsep(&p, ",");
+		if (p) {
+			if (kstrtos32(p, 10, &cmd_val)) {
+				index = sprintf(rbuf, "%s: invalid cmd param\n",
+					CMD_STYLUS_RAW_TEST);
+				goto exit;
+			}
+		}
+		ret = malloc_test_resource();
+		if (ret < 0) {
+			ts_err("malloc test resource failed");
+			goto exit;
+		}
+		ts_test->stylus_test_freq = cmd_val;
+		ts_test->item[GTP_STYLUS_RAW_TEST] = true;
+		goodix_auto_test(cd, false);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_STYLUS_OSC_TEST, strlen(CMD_STYLUS_OSC_TEST))) {
+		rbuf = vzalloc(SHORT_SIZE);
+		if (!rbuf) {
+			ts_err("failed to alloc rbuf");
+			goto exit;
+		}
+		ret = goodix_stylus_osc_test(cd);
+		if (ret < 0)
+			index = sprintf(rbuf, "stylus osc test:\nFAIL\n");
+		else
+			index = sprintf(rbuf, "stylus osc test:\nPASS\n");
 		goto exit;
 	}
 
