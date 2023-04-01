@@ -1176,13 +1176,6 @@ static int goodix_ts_procfs_init(struct goodix_ts_core *core_data)
 		goto err_create_driver;
 	}
 
-	/*
-	 * [GOOG]
-	 * Create symlink `goodix_ts` to `goodix_ts.0` for backward compatibility.
-	 */
-	if (dev_id == 0)
-		proc_symlink("goodix_ts", NULL, proc_node);
-
 	return 0;
 
 err_create_driver:
