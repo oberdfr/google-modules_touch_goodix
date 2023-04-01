@@ -1269,9 +1269,6 @@ static int goodix_parse_dt(
 	struct of_phandle_args panelmap;
 	struct drm_panel *panel = NULL;
 	const char *name;
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
-	int panel_id = -1;
-#endif
 
 	if (!board_data) {
 		ts_err("invalid board data");
@@ -1351,17 +1348,7 @@ static int goodix_parse_dt(
 	if (board_data->use_one_binary)
 		ts_info("use one binary");
 
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
-	panel_id = goog_get_panel_id(node);
-	if (panel_id >= 0) {
-		goog_get_firmware_name(node, panel_id, board_data->fw_name, sizeof(board_data->fw_name));
-		if (!board_data->use_one_binary)
-			goog_get_config_name(node, panel_id, board_data->cfg_bin_name, sizeof(board_data->cfg_bin_name));
-		goog_get_test_limits_name(node, panel_id, board_data->test_limits_name, sizeof(board_data->test_limits_name));
-	} else if (of_property_read_bool(node, "goodix,panel_map")) {
-#else
 	if (of_property_read_bool(node, "goodix,panel_map")) {
-#endif
 		for (index = 0;; index++) {
 			r = of_parse_phandle_with_fixed_args(
 				node, "goodix,panel_map", 1, index, &panelmap);
