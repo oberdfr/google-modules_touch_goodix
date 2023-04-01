@@ -122,6 +122,8 @@
 #define ABS(val) ((val < 0) ? -(val) : val)
 #define MAX(a, b) ((a > b) ? a : b)
 
+static bool module_initialized;
+
 /* short threshold, drv-drv, drv-sen, sen-sen, drv-gnd, sen-gnd, avdd */
 static u8 short_circuit_threshold[] = { 10, 200, 200, 200, 200, 200, 30 };
 
@@ -515,7 +517,7 @@ static int goodix_tptest_prepare(struct goodix_ts_test *ts_test)
 	/* disable irq */
 	ts_test_irq_enable(ts_test, false);
 	/* close esd */
-	goodix_ts_esd_off(ts_test->ts);
+	goodix_ts_blocking_notify(NOTIFY_ESD_OFF, NULL);
 
 	return 0;
 }
@@ -527,7 +529,7 @@ static void goodix_tptest_finish(struct goodix_ts_test *ts_test)
 	ts_test_reset(ts_test, 100);
 
 	/* open esd */
-	goodix_ts_esd_on(ts_test->ts);
+	goodix_ts_blocking_notify(NOTIFY_ESD_ON, NULL);
 	/* enable irq */
 	ts_test_irq_enable(ts_test, true);
 }
@@ -1351,10 +1353,10 @@ static ssize_t get_rawdata_show(
 
 static DEVICE_ATTR(get_rawdata, 0444, get_rawdata_show, NULL);
 
-int inspect_module_init(struct goodix_ts_core *core_data)
+int inspect_module_init(void)
 {
 	int ret;
-	struct kobject *def_kobj = &core_data->pdev->dev.kobj;
+	struct kobject *def_kobj = goodix_get_default_kobj();
 
 	/* create sysfs */
 	ret = sysfs_create_file(def_kobj, &dev_attr_get_rawdata.attr);
@@ -1362,6 +1364,8 @@ int inspect_module_init(struct goodix_ts_core *core_data)
 		ts_err("create sysfs of get_rawdata failed");
 		goto err_out;
 	}
+
+	module_initialized = true;
 	ts_info("inspect module init success");
 	return 0;
 
@@ -1370,10 +1374,14 @@ err_out:
 	return ret;
 }
 
-void inspect_module_exit(struct goodix_ts_core *core_data)
+void inspect_module_exit(void)
 {
-	struct kobject *def_kobj = &core_data->pdev->dev.kobj;
+	struct kobject *def_kobj = goodix_get_default_kobj();
 
 	ts_info("inspect module exit");
+	if (!module_initialized)
+		return;
+
 	sysfs_remove_file(def_kobj, &dev_attr_get_rawdata.attr);
+	module_initialized = false;
 }

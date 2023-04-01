@@ -69,7 +69,7 @@ int checksum_cmp(const u8 *data, int size, int mode)
 	u32 cal_checksum = 0;
 	u32 r_checksum = 0;
 	u32 i;
-	bool is_valid = !is_risk_data(data, size); /* [GOOG] */
+	bool is_valid = !is_risk_data(data, size);
 
 	if (mode == CHECKSUM_MODE_U8_LE) {
 		if (size < 2)
@@ -123,11 +123,7 @@ u32 goodix_get_file_config_id(u8 *ic_config)
 	return le32_to_cpup((__le32 *)&ic_config[CONFIG_ID_OFFSET]);
 }
 
-/*
- * matrix transpose:
- * [GOOG]
- * Add 'dest' as optional target(pa/2221748).
- */
+/* matrix transpose */
 void goodix_rotate_abcd2cbad(int tx, int rx, s16 *src, s16 *dest)
 {
 	s16 *temp_buf = dest;
@@ -136,14 +132,10 @@ void goodix_rotate_abcd2cbad(int tx, int rx, s16 *src, s16 *dest)
 	s16 *curr;
 	int index_org = 0;
 
-	/*
-	 * [GOOG]
-	 * If no 'dest' assign, 'src' will be overwrote.
-	 */
 	if (dest == NULL) {
 		temp_buf = kcalloc(size, sizeof(s16), GFP_KERNEL);
 		if (!temp_buf) {
-			ts_err("%s: malloc failed!\n", __func__);
+			ts_err("malloc failed");
 			return;
 		}
 	}
@@ -160,7 +152,6 @@ void goodix_rotate_abcd2cbad(int tx, int rx, s16 *src, s16 *dest)
 		memcpy(src, temp_buf, size * sizeof(s16));
 		kfree(temp_buf);
 	}
-	/*~[GOOG] */
 }
 
 /* get ic type */
