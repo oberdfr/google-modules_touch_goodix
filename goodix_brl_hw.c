@@ -1059,9 +1059,6 @@ static void goodix_parse_pen(
 	int16_t x_angle, y_angle;
 	int i;
 
-	if ((buf[0] & 0x0F) == POINT_TYPE_STYLUS_HOVER)
-		pen_data->is_hover = true;
-
 	pen_data->coords.status = TS_TOUCH;
 	pen_data->coords.x = le16_to_cpup((__le16 *)(buf + 2));
 	pen_data->coords.y = le16_to_cpup((__le16 *)(buf + 4));
@@ -1070,13 +1067,6 @@ static void goodix_parse_pen(
 	y_angle = le16_to_cpup((__le16 *)(buf + 10));
 	pen_data->coords.tilt_x = x_angle / 100;
 	pen_data->coords.tilt_y = y_angle / 100;
-
-	/* ble pen data */
-	pen_data->custom_flag = event_head[3] & 0x01;
-	if (pen_data->custom_flag) {
-		pen_data->tx1_freq_index = buf[19];
-		pen_data->tx2_freq_index = buf[20];
-	}
 
 	cur_key_map = (buf[3] & 0x0F) >> 1;
 	for (i = 0; i < GOODIX_MAX_PEN_KEY; i++) {
@@ -1236,7 +1226,7 @@ static int brl_event_handler(struct goodix_ts_core *cd,
  */
 
 	if (event_data->type & (GOODIX_TOUCH_EVENT >> 4))
-		goodix_touch_handler(cd, ts_event,
+		return goodix_touch_handler(cd, ts_event,
 			(struct goodix_ts_touch_event_data *)event_data);
 
 	if (event_data->type & (GOODIX_REQUEST_EVENT >> 4)) {
@@ -1249,6 +1239,27 @@ static int brl_event_handler(struct goodix_ts_core *cd,
 			ts_event->request_code = REQUEST_TYPE_RESET;
 		else if (request->request_type == BRL_REQUEST_CODE_UPDATE)
 			ts_event->request_code = REQUEST_TYPE_UPDATE;
+		else if (request->request_type == BRL_REQUEST_PEN_FREQ_HOP)
+			if (request->data_len && !checksum_cmp(request->data,
+							 request->data_len + 2,
+							 CHECKSUM_MODE_U8_LE)) {
+				if (request->data_len + 2 <=
+					GOODIX_REQUEST_DATA_LEN) {
+					memcpy(ts_event->request_data,
+						request->data,
+						request->data_len + 2);
+					ts_event->request_code =
+						REQUEST_PEN_FREQ_HOP;
+				} else {
+					ts_err("request data len exceed limit %d",
+						request->data_len + 2);
+				}
+			} else {
+				ts_info("invalid request data %d",
+					request->data_len);
+				ts_info("request data:%*ph", request->data_len,
+					request->data);
+			}
 		else
 			ts_debug("unsupported request code 0x%x",
 				request->request_type);

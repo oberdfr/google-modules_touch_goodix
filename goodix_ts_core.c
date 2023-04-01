@@ -168,22 +168,6 @@ static ssize_t chip_info_show(struct device  *dev,
 	return cnt;
 }
 
-/* reset chip */
-static ssize_t goodix_ts_reset_store(struct device *dev,
-				     struct device_attribute *attr,
-				     const char *buf,
-				     size_t count)
-{
-	struct goodix_ts_core *core_data = dev_get_drvdata(dev);
-	struct goodix_ts_hw_ops *hw_ops = core_data->hw_ops;
-
-	if (!buf || count <= 0)
-		return -EINVAL;
-	if (buf[0] != '0')
-		hw_ops->reset(core_data, GOODIX_NORMAL_RESET_DELAY_MS);
-	return count;
-}
-
 /* read config */
 static ssize_t read_cfg_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
@@ -568,96 +552,81 @@ static ssize_t goodix_ts_debug_log_store(struct device *dev,
 	return count;
 }
 
-static int goodix_refresh_pen_pair(struct goodix_ts_core *cd)
+int goodix_update_pen_freq(struct goodix_ts_core *cd, u8 *data, int len)
 {
 	struct goodix_ble_data *ble_data = &cd->ble_data;
-	u8 checksum = 0;
-	int i;
 
+	if (len > sizeof(ble_data->freq)) {
+		ts_err("pen freq data exceed limit");
+		return -EINVAL;
+	}
 	mutex_lock(&ble_data->lock);
-	ble_data->cmd.cmd = 0xC5;
-	ble_data->cmd.len = 5;
-	ble_data->cmd.data[0] = 1;
-	ble_data->cmd.data[1] = ble_data->tx1_freq_index;
-	ble_data->cmd.data[2] = ble_data->tx2_freq_index;
-	ble_data->cmd.data[3] = 0;
-	ble_data->cmd.data[4] = 0;
-	for (i = 0; i < 7; i++)
-		checksum += ble_data->cmd.buf[i];
-	ble_data->cmd.data[5] = checksum;
+	memset(ble_data->freq, 0, sizeof(ble_data->freq));
+	memcpy(ble_data->freq, data, len);
+	ble_data->freq_ready = 1;
 	mutex_unlock(&ble_data->lock);
-	sysfs_notify(&cd->pdev->dev.kobj, NULL, "pen_get");
-	ts_info("pen pair event");
+	sysfs_notify(&cd->pdev->dev.kobj, NULL, "pen_freq");
+	ts_debug("send pen freq hop event");
 	return 0;
 }
 
 /* debug level show */
-static ssize_t goodix_ts_pen_get_show(struct device *dev,
-				       struct device_attribute *attr,
-				       char *buf)
+static ssize_t goodix_ts_pen_freq_show(
+	struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct goodix_ts_core *core_data = dev_get_drvdata(dev);
 	struct goodix_ble_data *ble_data = &core_data->ble_data;
 
 	mutex_lock(&ble_data->lock);
-	memcpy(buf, ble_data->cmd.buf, sizeof(ble_data->cmd));
+	memcpy(buf, ble_data->freq, sizeof(ble_data->freq));
+	ble_data->freq_ready = 0;
 	mutex_unlock(&ble_data->lock);
-	return sizeof(ble_data->cmd);
+	return sizeof(ble_data->freq);
 }
 
 /* debug level store */
 static ssize_t goodix_ts_pen_debug_store(struct device *dev,
-					struct device_attribute *attr,
-					const char *buf, size_t count)
+	struct device_attribute *attr, const char *buf, size_t count)
 {
+	int pen_freq;
 	struct goodix_ts_core *core_data = dev_get_drvdata(dev);
+	struct goodix_ble_data *ble_data = &core_data->ble_data;
 
-	sysfs_notify(&core_data->pdev->dev.kobj, NULL, "pen_get");
+	sscanf(buf, "%d", &pen_freq);
+	ts_debug("set new pen_freq %d", pen_freq);
+	ble_data->freq[0] = 0xC0;
+	ble_data->freq[1] = 1;
+	ble_data->freq[2] = pen_freq & 0xFF;
+
+	sysfs_notify(&core_data->pdev->dev.kobj, NULL, "pen_freq");
 	return count;
 }
 
-static ssize_t goodix_ts_pen_set_store(struct device *dev,
-					struct device_attribute *attr,
-					const char *buf, size_t count)
+static ssize_t goodix_ts_pen_hogp_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
 {
+	struct goodix_hid_hogp *tmp_prs;
 	struct goodix_ts_core *core_data = dev_get_drvdata(dev);
 	struct goodix_ble_data *ble_data = &core_data->ble_data;
-	struct goodix_ble_cmd temp_cmd;
-	struct goodix_ts_cmd cmd;
 
-	if (count > sizeof(temp_cmd)) {
-		ts_err("data count to long");
+	if (count < sizeof(ble_data->hogp)) {
+		ts_err("data count to short");
 		return -EINVAL;
 	}
-	ts_debug("get ble cmd:%*ph", (int)count, buf);
 
 	mutex_lock(&ble_data->lock);
-	memcpy(temp_cmd.buf, buf, count);
-	switch (temp_cmd.cmd) {
-	case 0x4B:
-		ble_data->pressure = (temp_cmd.data[1] << 8) | temp_cmd.data[0];
-		ble_data->hogp_ready = 1;
-		break;
-	case 0xC4:
-		cmd.cmd = 0xAA;
-		cmd.len = 6;
-		cmd.data[0] = temp_cmd.data[1];
-		cmd.data[1] = temp_cmd.data[2];
-		core_data->hw_ops->send_cmd(core_data, &cmd);
-		cmd.cmd = 0xBB;
-		cmd.len = 5;
-		cmd.data[0] = temp_cmd.data[4];
-		core_data->hw_ops->send_cmd(core_data, &cmd);
-		break;
-	}
+	memcpy(ble_data->hogp, buf, sizeof(ble_data->hogp));
+	ble_data->hogp_ready = 1;
 	mutex_unlock(&ble_data->lock);
 
+	tmp_prs = (struct goodix_hid_hogp *)ble_data->hogp;
+	ts_debug("set ble pen data: %d, key %x", tmp_prs->pressure,
+		tmp_prs->key);
 	return count;
 }
 
 static DEVICE_ATTR(driver_info, 0440, driver_info_show, NULL);
 static DEVICE_ATTR(chip_info, 0440, chip_info_show, NULL);
-static DEVICE_ATTR(hw_reset, 0220, NULL, goodix_ts_reset_store); /* [GOOG] */
 static DEVICE_ATTR(send_cfg, 0220, NULL, goodix_ts_send_cfg_store);
 static DEVICE_ATTR(read_cfg, 0440, read_cfg_show, NULL);
 static DEVICE_ATTR(reg_rw, 0664, goodix_ts_reg_rw_show, goodix_ts_reg_rw_store);
@@ -667,23 +636,22 @@ static DEVICE_ATTR(
 	esd_info, 0664, goodix_ts_esd_info_show, goodix_ts_esd_info_store);
 static DEVICE_ATTR(
 	debug_log, 0664, goodix_ts_debug_log_show, goodix_ts_debug_log_store);
-static DEVICE_ATTR(pen_get, 0440, goodix_ts_pen_get_show, NULL);
+static DEVICE_ATTR(pen_freq, 0440, goodix_ts_pen_freq_show, NULL);
 static DEVICE_ATTR(pen_debug, 0220, NULL, goodix_ts_pen_debug_store);
-static DEVICE_ATTR(pen_set, 0220, NULL, goodix_ts_pen_set_store);
+static DEVICE_ATTR(pen_hogp, 0220, NULL, goodix_ts_pen_hogp_store);
 
 static struct attribute *sysfs_attrs[] = {
 	&dev_attr_driver_info.attr,
 	&dev_attr_chip_info.attr,
-	&dev_attr_hw_reset.attr,/* [GOOG] use touch_apis.c to create `reset` sysfs instead */
 	&dev_attr_send_cfg.attr,
 	&dev_attr_read_cfg.attr,
 	&dev_attr_reg_rw.attr,
 	&dev_attr_irq_info.attr,
 	&dev_attr_esd_info.attr,
 	&dev_attr_debug_log.attr,
-	&dev_attr_pen_get.attr,
+	&dev_attr_pen_freq.attr,
 	&dev_attr_pen_debug.attr,
-	&dev_attr_pen_set.attr,
+	&dev_attr_pen_hogp.attr,
 	NULL,
 };
 
@@ -1469,6 +1437,7 @@ static void goodix_ts_report_pen(
 {
 	struct input_dev *dev = cd->pen_dev;
 	int i;
+	struct goodix_hid_hogp *hogp;
 	struct goodix_ble_data *ble_data = &cd->ble_data;
 	char trace_tag[128];
 	ktime_t pen_ktime;
@@ -1483,16 +1452,14 @@ static void goodix_ts_report_pen(
 			ktime_to_ns(cd->coords_timestamp), ktime_to_ns(pen_ktime),
 			ktime_to_ns(ktime_sub(pen_ktime, cd->coords_timestamp)));
 		ATRACE_BEGIN(trace_tag);
-		if (pen_data->is_hover)
-			input_report_key(dev, BTN_TOUCH, 0);
-		else
-			input_report_key(dev, BTN_TOUCH, 1);
+		input_report_key(dev, BTN_TOUCH, 1);
 		input_report_key(dev, BTN_TOOL_PEN, 1);
 		input_report_abs(dev, ABS_X, pen_data->coords.x);
 		input_report_abs(dev, ABS_Y, pen_data->coords.y);
 		mutex_lock(&ble_data->lock);
 		if (ble_data->hogp_ready) {
-			cd->pen_pressure = ble_data->pressure;
+			hogp = (struct goodix_hid_hogp *)ble_data->hogp;
+			cd->pen_pressure = hogp->pressure;
 			ts_debug("update pen pressure from ble %d",
 				cd->pen_pressure);
 		}
@@ -1515,15 +1482,6 @@ static void goodix_ts_report_pen(
 			pen_data->coords.tilt_y,
 			pen_data->keys[0].status == TS_TOUCH ? 1 : 0,
 			pen_data->keys[1].status == TS_TOUCH ? 1 : 0);
-
-		if (pen_data->custom_flag) {
-			if (ble_data->tx1_freq_index != pen_data->tx1_freq_index ||
-					ble_data->tx2_freq_index != pen_data->tx2_freq_index) {
-				ble_data->tx1_freq_index = pen_data->tx1_freq_index;
-				ble_data->tx2_freq_index = pen_data->tx2_freq_index;
-				goodix_refresh_pen_pair(cd);
-			}
-		}
 	} else {
 		scnprintf(trace_tag, sizeof(trace_tag),
 			"stylus-inactive: IN_TS=%lld TS=%lld DELTA=%lld ns.\n",
@@ -1712,6 +1670,9 @@ static int goodix_ts_request_handle(
 	else if (ts_event->request_code == REQUEST_TYPE_UPDATE)
 		ret = goodix_do_fw_update(cd, UPDATE_MODE_FORCE | UPDATE_MODE_BLOCK |
 			UPDATE_MODE_SRC_REQUEST);
+	else if (ts_event->request_code == REQUEST_PEN_FREQ_HOP)
+		ret = goodix_update_pen_freq(cd, ts_event->request_data,
+			sizeof(ts_event->request_data));
 	else
 		ts_info("can not handle request type 0x%x",
 			ts_event->request_code);
@@ -2138,9 +2099,6 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 	input_set_capability(input_dev, EV_KEY, KEY_POWER);
 	input_set_capability(input_dev, EV_KEY, KEY_WAKEUP);
 	input_set_capability(input_dev, EV_KEY, KEY_GOTO);
-
-	core_data->ble_data.tx1_freq_index = 0xFF;
-	core_data->ble_data.tx2_freq_index = 0xFF;
 
 	r = input_register_device(input_dev);
 	if (r < 0) {
