@@ -57,7 +57,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.2.5"
+#define GOODIX_DRIVER_VERSION "v1.2.5a"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -545,27 +545,40 @@ struct goodix_ts_key {
 	int code;
 };
 
-#define GOODIX_MAX_PEN_FREQ_DATA_LEN 16
-#define GOODIX_HOGP_INFO_LEN 3
-
 #pragma pack(1)
-struct goodix_hid_hogp {
-	u16 pressure;
-	u8 key;
+struct goodix_ble_cmd {
+	union {
+		struct {
+			u8 cmd;
+			u8 len;
+			u8 data[32];
+		};
+		u8 buf[34];
+	};
 };
 #pragma pack()
 
+#define GOODIX_MAX_PEN_FREQ_DATA_LEN 16
+#define GOODIX_HOGP_INFO_LEN 3
+
 struct goodix_ble_data {
 	u8 freq[GOODIX_MAX_PEN_FREQ_DATA_LEN];
-	u8 hogp[GOODIX_HOGP_INFO_LEN];
+	int sync_status;
+	int tx1_freq_index;
+	int tx2_freq_index;
 	int hogp_ready;
-	int freq_ready;
+	int pressure;
+	struct goodix_ble_cmd cmd;
 	struct mutex lock;
 };
 
 struct goodix_pen_data {
 	struct goodix_pen_coords coords;
 	struct goodix_ts_key keys[GOODIX_MAX_PEN_KEY];
+	bool is_hover;
+	bool custom_flag;
+	int tx1_freq_index;
+	int tx2_freq_index;
 };
 
 /*
@@ -970,6 +983,5 @@ int goodix_do_inspect(struct goodix_ts_core *cd, struct ts_rawdata_info *info);
 int goodix_ts_report_gesture(struct goodix_ts_core *cd, struct goodix_ts_event *event);
 void goodix_ts_report_status(struct goodix_ts_core *core_data,
 	struct goodix_ts_event *ts_event);
-int goodix_update_pen_freq(struct goodix_ts_core *cd, u8 *data, int len);
 
 #endif
