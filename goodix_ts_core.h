@@ -57,7 +57,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.2.5a"
+#define GOODIX_DRIVER_VERSION "v1.2.6"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -173,6 +173,9 @@ enum frame_data_type : u8 {
 	FRAME_DATA_TYPE_DIFF = 0x82,
 	FRAME_DATA_TYPE_BASE = 0x83,
 };
+
+#define TOUCH_PACK_EN		BIT(0)
+#define STYLUS_PACK_EN		BIT(1)
 
 #define MAX_SCAN_FREQ_NUM 8
 #define MAX_SCAN_RATE_NUM 8
@@ -292,6 +295,18 @@ struct goodix_ic_info {
 	struct goodix_ic_info_feature feature;
 	struct goodix_ic_info_param parm;
 	struct goodix_ic_info_misc misc;
+};
+
+struct goodix_frame_head {
+	u8 sync;
+	u16 frame_index;
+	u16 cur_frame_len;
+	u16 next_frame_len;
+	u32 data_en;
+	u8 touch_pack_index;
+	u8 stylus_pack_index;
+	u8 res;
+	u16 checksum;
 };
 #pragma pack()
 
