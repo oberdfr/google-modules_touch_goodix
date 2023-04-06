@@ -1344,10 +1344,20 @@ static int goodix_parse_dt(
 			}
 		}
 
-		/* use default test limits name */
-		ts_info("use default test limits: %s", TS_DEFAULT_TEST_LIMITS);
-		strncpy(board_data->test_limits_name, TS_DEFAULT_TEST_LIMITS,
-			sizeof(board_data->test_limits_name));
+		/* get test limits file name */
+		r = of_property_read_string(
+			node, "goodix,test-limits-name", &name_tmp);
+		if (!r) {
+			ts_info("test limits name from dt: %s", name_tmp);
+			strncpy(board_data->test_limits_name, name_tmp,
+				sizeof(board_data->test_limits_name));
+		} else {
+			/* use default test limits name */
+			ts_info("can't find test limits name, use default: %s\n",
+				TS_DEFAULT_TEST_LIMITS);
+			strncpy(board_data->test_limits_name, TS_DEFAULT_TEST_LIMITS,
+				sizeof(board_data->test_limits_name));
+		}
 	}
 
 	/* get xyz resolutions */
