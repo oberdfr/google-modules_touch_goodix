@@ -344,7 +344,6 @@ static int goodix_spi_probe(struct spi_device *spi)
 	dev_res = kzalloc(sizeof(*dev_res), GFP_KERNEL);
 	if (!dev_res)
 		return -ENOMEM;
-	goodix_device_register(dev_res);
 
 	/* get ic type */
 	ret = goodix_get_ic_type(spi->dev.of_node, &dev_res->bus);
@@ -361,14 +360,19 @@ static int goodix_spi_probe(struct spi_device *spi)
 	}
 	dev_res->bus.write = goodix_spi_write;
 
+/* [GOOG]
+ * Move goodix_device_register() after `dev_res->bus.dev` assigned.
+ * This will help to set the `struct device *dev` early.
+ */
+	goodix_device_register(dev_res);
 
-	/* [GOOG] */
 	dev_res->bus.rx_buf = kzalloc(SPI_PREALLOC_RX_BUF_SIZE, GFP_KERNEL);
 	dev_res->bus.tx_buf = kzalloc(SPI_PREALLOC_TX_BUF_SIZE, GFP_KERNEL);
 	if (!dev_res->bus.rx_buf || !dev_res->bus.tx_buf) {
 		ret = -ENOMEM;
 		goto err_pdev;
 	}
+/*~[GOOG] */
 	mutex_init(&dev_res->bus.mutex);
 
 	dev_res->bus.dma_mode_enabled = false;

@@ -36,6 +36,39 @@ struct goodix_device_manager goodix_devices;
 
 static const struct dev_pm_ops dev_pm_ops; /* [GOOG] */
 
+/*
+ * [GOOG]
+ * Wait device to complete the init stage2 by order.
+ */
+static void goodix_wait_for_init_stage2_start(struct goodix_ts_core *current_cd)
+{
+	struct goodix_device_resource *res, *next;
+	struct goodix_ts_core *cd;
+
+	if (!goodix_devices.initialized)
+		return;
+
+	if (list_empty(&goodix_devices.list))
+		return;
+
+	list_for_each_entry_safe(res, next, &goodix_devices.list, list) {
+		cd = &res->core_data;
+		if (res->id >= current_cd->pdev->id ||
+			cd->init_stage != CORE_INIT_STAGE1) {
+			continue;
+		}
+
+		/* Wait device to complete the init stage1 */
+		if (wait_for_completion_timeout(&cd->init_stage2_complete,
+				msecs_to_jiffies(2 * MSEC_PER_SEC)) == 0)
+			ts_info("device#%d wait device#%d timeout to complete init state2!",
+				current_cd->pdev->id, res->id);
+		else
+			ts_info("device#%d complete init stage2", res->id);
+	}
+}
+
+
 static void goodix_device_manager_init(void)
 {
 	if (goodix_devices.initialized)
@@ -59,14 +92,22 @@ static void goodix_device_manager_exit(void)
 
 int goodix_device_register(struct goodix_device_resource *device)
 {
+	u32 dev_id; /* [GOOG] */
+
 	if (!device)
 		return -ENXIO;
 
 	mutex_lock(&goodix_devices.mutex);
 	list_add(&device->list, &goodix_devices.list);
-	device->id = goodix_devices.nums++;
+	dev_id = goodix_devices.nums++;
+	if (device->bus.dev) {
+		of_property_read_u32(device->bus.dev->of_node,
+			"goodix,dev-id", &dev_id); /* [GOOG] */
+	}
+	device->id = dev_id;
 	sprintf(device->name, "%s.%d", GOODIX_CORE_DRIVER_NAME, device->id);
 	mutex_unlock(&goodix_devices.mutex);
+	init_completion(&device->core_data.init_stage2_complete); /* [GOOG] */
 	ts_info("register device %s", device->name);
 
 	return 0;
@@ -2758,6 +2799,8 @@ static int goodix_later_init_thread(void *data)
 	struct goodix_ts_core *cd = data;
 	struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
 
+	goodix_wait_for_init_stage2_start(cd); /* [GOOG] */
+
 	/* step 1: read version */
 	ret = cd->hw_ops->read_version(cd, &cd->fw_version);
 	if (ret < 0) {
@@ -2808,6 +2851,8 @@ static int goodix_later_init_thread(void *data)
 		goto uninit_fw;
 	}
 	cd->init_stage = CORE_INIT_STAGE2;
+
+	complete_all(&cd->init_stage2_complete); /* [GOOG] */
 
 	return 0;
 
