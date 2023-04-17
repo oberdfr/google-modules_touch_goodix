@@ -2486,7 +2486,11 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
 	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_ACTIVE); /* [GOOG] */
 
 	atomic_set(&core_data->suspended, 0);
-	hw_ops->irq_enable(core_data, false);
+	/* [GOOG]
+	 * This will cause a deadlock with wakelock. Since we already disable irq
+	 * when touch is suspended, we don't need to disable irq here again.
+	 */
+	//hw_ops->irq_enable(core_data, false);
 
 	/* [GOOG] */
 	if (check_gesture_mode(core_data)) {
