@@ -1352,8 +1352,10 @@ static int goodix_parse_dt(
 		ts_info("use one binary");
 
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
-	panel_id = goog_get_panel_id(node);
-	if (panel_id >= 0) {
+	if (of_property_read_bool(node, "goog,panel_map")) {
+		panel_id = goog_get_panel_id(node);
+		if (panel_id < 0)
+			return -EPROBE_DEFER;
 		goog_get_firmware_name(node, panel_id, board_data->fw_name, sizeof(board_data->fw_name));
 		if (!board_data->use_one_binary)
 			goog_get_config_name(node, panel_id, board_data->cfg_bin_name, sizeof(board_data->cfg_bin_name));
