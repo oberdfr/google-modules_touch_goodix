@@ -114,7 +114,7 @@ static int goodix_read_cfg_bin(struct device *dev, const char *cfg_name,
 		if (!ret)
 			break;
 		ts_info("get cfg bin retry:[%d]", GOODIX_RETRY_3 - retry);
-		msleep(200);
+		msleep(300);
 	}
 	if (retry < 0) {
 		ts_err("failed get cfg bin[%s] error:%d", cfg_name, ret);
