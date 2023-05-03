@@ -872,8 +872,7 @@ static int get_self_sensor_data(
 		cmd->buffer = (u8 *)cd->self_sensing_data;
 		cmd->size = (tx + rx) * sizeof(uint16_t);
 	} else {
-		/* disable irq & close esd */
-		cd->hw_ops->irq_enable(cd, false);
+		/* disable esd */
 		goodix_ts_esd_off(cd);
 
 		ret = -EINVAL;
@@ -890,8 +889,7 @@ static int get_self_sensor_data(
 			cmd->size = (tx + rx) * sizeof(uint16_t);
 		}
 
-		/* enable irq & esd */
-		cd->hw_ops->irq_enable(cd, true);
+		/* enable esd */
 		goodix_ts_esd_on(cd);
 	}
 	return ret;
