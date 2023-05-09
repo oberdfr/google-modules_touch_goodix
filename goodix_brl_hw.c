@@ -1068,7 +1068,6 @@ static unsigned int goodix_pen_btn_code[] = { BTN_STYLUS, BTN_STYLUS2 };
 static void goodix_parse_pen(
 	struct goodix_pen_data *pen_data, u8 *buf, int touch_num)
 {
-	unsigned int id = 0;
 	u8 cur_key_map = 0;
 	u8 *coor_data;
 	int16_t x_angle, y_angle;
@@ -1080,7 +1079,6 @@ static void goodix_parse_pen(
 		pen_data->coords.status = TS_TOUCH;
 		coor_data = &buf[IRQ_EVENT_HEAD_LEN];
 
-		id = (coor_data[0] >> 4) & 0x0F;
 		pen_data->coords.x = le16_to_cpup((__le16 *)(coor_data + 2));
 		pen_data->coords.y = le16_to_cpup((__le16 *)(coor_data + 4));
 		pen_data->coords.p = le16_to_cpup((__le16 *)(coor_data + 6));
