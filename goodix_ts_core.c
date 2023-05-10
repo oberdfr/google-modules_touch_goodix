@@ -1954,14 +1954,6 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	struct goodix_ts_esd *ts_esd = &core_data->ts_esd;
 	int ret;
 
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
-	ret = goog_pm_wake_lock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ, true);
-	if(ret < 0) {
-		ts_info("Error while obtaining IRQ wakelock: %d!\n", ret);
-		return IRQ_HANDLED;
-	}
-#endif
-
 	/*
 	 * Since we received an interrupt from touch firmware, it means touch
 	 * firmware is still alive. So skip esd check once.
@@ -1978,9 +1970,6 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		ret = ext_module->funcs->irq_event(core_data, ext_module);
 		if (ret == EVT_CANCEL_IRQEVT) {
 			mutex_unlock(&goodix_modules.mutex);
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
-			goog_pm_wake_unlock_nosync(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
-#endif
 			return IRQ_HANDLED;
 		}
 	}
@@ -2016,10 +2005,6 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		/* read done */
 		hw_ops->after_event_handler(core_data);
 	}
-
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
-	goog_pm_wake_unlock_nosync(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
-#endif
 
 	return IRQ_HANDLED;
 }
