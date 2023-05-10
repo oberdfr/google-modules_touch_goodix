@@ -1829,14 +1829,6 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	struct goodix_ts_esd *ts_esd = &core_data->ts_esd;
 	int ret;
 
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
-	ret = goog_pm_wake_lock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ, true);
-	if(ret < 0) {
-		ts_info("Error while obtaing IRQ wakelock: %d!\n", ret);
-		return IRQ_HANDLED;
-	}
-#endif
-
 /* [GOOG]
  * Remove the control to enable/disable the interrupt for bottom-half.
 	disable_irq_nosync(core_data->irq);
@@ -1886,10 +1878,6 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
  * Remove the control to enable/disable the interrupt for bottom-half.
 	enable_irq(core_data->irq);
  */
-
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
-	goog_pm_wake_unlock_nosync(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
-#endif
 
 	return IRQ_HANDLED;
 }
