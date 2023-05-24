@@ -1092,9 +1092,22 @@ static int goodix_update_heatmap(struct goodix_ts_core *cd, u8 *event_data)
 	struct goodix_ic_info_misc *misc = &cd->ic_info.misc;
 	int tx = cd->ic_info.parm.drv_num;
 	int rx = cd->ic_info.parm.sen_num;
-	int mutual_len = sizeof(struct goodix_mutual_data) + tx * rx * 2;
+	int mutual_struct_len = misc->mutual_struct_len;
 	struct goodix_mutual_data *mutual_data;
 	struct goodix_self_sensing_data *self_sensing_data;
+
+	/*
+	 * Memory map of event data
+	 * ===========================================
+	 *        touch_data_addr -> touch_data
+	 *                           ...
+	 *        frame_data_addr -> frame_data_head
+	 *                           fw_attr
+	 *                           fw_log
+	 *       mutual_data_addr -> mutual_data
+	 * self_sensing_data_addr -> self_sensing_data
+	 * ===========================================
+	 */
 	uint8_t *mutual_head = event_data + misc->frame_data_addr -
 			       misc->touch_data_addr +
 			       misc->frame_data_head_len + misc->fw_attr_len +
@@ -1102,7 +1115,7 @@ static int goodix_update_heatmap(struct goodix_ts_core *cd, u8 *event_data)
 
 	mutual_data = (struct goodix_mutual_data *)mutual_head;
 	self_sensing_data =
-		(struct goodix_self_sensing_data *)(mutual_head + mutual_len);
+		(struct goodix_self_sensing_data *)(mutual_head + mutual_struct_len);
 	goodix_rotate_abcd2cbad(tx, rx, mutual_data->data, cd->mutual_data);
 	memcpy(cd->self_sensing_data, self_sensing_data->data, (tx + rx) * 2);
 
