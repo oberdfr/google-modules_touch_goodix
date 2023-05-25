@@ -263,34 +263,24 @@ int brl_suspend(struct goodix_ts_core *cd)
 {
 	u32 cmd_reg = cd->ic_info.misc.cmd_addr;
 	u8 sleep_cmd[] = { 0x00, 0x00, 0x05, 0xC4, 0x01, 0xCA, 0x00 };
+	u8 sleep_cmd_brlb[] = { 0x00, 0x00, 0x05, 0xCA, 0x01, 0xD0, 0x00 };
+	int ret; /* [GOOG] */
 
-	return cd->hw_ops->write(cd, cmd_reg, sleep_cmd, sizeof(sleep_cmd));
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B)
+		ret = cd->hw_ops->write(cd, cmd_reg, sleep_cmd_brlb, sizeof(sleep_cmd_brlb));
+	else
+		ret = cd->hw_ops->write(cd, cmd_reg, sleep_cmd, sizeof(sleep_cmd));
+	return ret;
 }
 
 int brl_resume(struct goodix_ts_core *cd)
 {
 	u32 cmd_reg = cd->ic_info.misc.cmd_addr;
 	u8 cmd_buf[] = { 0x00, 0x00, 0x04, 0xA7, 0xAB, 0x00 };
-	int retry = 20;
-	u8 rcv_buf[2];
+	int ret; /* [GOOG] */
 
-	cd->hw_ops->write(cd, cmd_reg, cmd_buf, sizeof(cmd_buf));
-
-	while (retry--) {
-		usleep_range(5000, 5100);
-		cd->hw_ops->read(cd, cmd_reg, rcv_buf, sizeof(rcv_buf));
-		if (rcv_buf[0] == 0x80 && rcv_buf[1] == 0x80)
-			break;
-	}
-	if (retry < 0) {
-		ts_err("failed to exit sleep mode, status[%X] ack[%X]",
-			rcv_buf[0], rcv_buf[1]);
-		return -EINVAL;
-	} else {
-		ts_info("Succeed to exit sleep mode with retry: %d", 19 - retry);
-	}
-
-	return 0;
+	ret = cd->hw_ops->write(cd, cmd_reg, cmd_buf, sizeof(cmd_buf));
+	return ret;
 }
 
 #define GOODIX_GESTURE_CMD_BA 0x12

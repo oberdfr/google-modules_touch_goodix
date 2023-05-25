@@ -1954,7 +1954,7 @@ static int goodix_open_test(struct goodix_ts_core *cd)
 		if (retry < 0) {
 			ts_err("rawdata is not ready val:0x%02x i:%d, exit",
 				val, i);
-			ret = -EINVAL;
+			ret = -EAGAIN;
 			goto exit;
 		}
 
@@ -2049,7 +2049,7 @@ static int goodix_self_open_test(struct goodix_ts_core *cd)
 	}
 	if (retry < 0) {
 		ts_err("self rawdata is not ready val:0x%02x, exit", val);
-		ret = -EINVAL;
+		ret = -EAGAIN;
 		goto exit;
 	}
 
@@ -2135,7 +2135,7 @@ static int goodix_noise_test(struct goodix_ts_core *cd)
 		if (retry < 0) {
 			ts_err("noisedata is not ready val:0x%02x i:%d, exit",
 				val, i);
-			ret = -EINVAL;
+			ret = -EAGAIN;
 			goto exit;
 		}
 
@@ -2373,6 +2373,7 @@ static int goodix_auto_test(struct goodix_ts_core *cd, bool is_brief)
 {
 	struct goodix_ts_cmd temp_cmd;
 	int ret;
+	int i;
 
 	ret = goodix_obtain_testlimits(cd);
 	if (ret < 0) {
@@ -2388,24 +2389,32 @@ static int goodix_auto_test(struct goodix_ts_core *cd, bool is_brief)
 	temp_cmd.data[0] = 1;
 
 	if (ts_test->item[GTP_CAP_TEST]) {
-		ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
-		if (ret < 0)
-			ts_err("enter test mode failed");
-		goodix_open_test(cd);
-		cd->hw_ops->reset(cd, 100);
+		for (i = 0; i < 3; i++) {
+			cd->hw_ops->send_cmd(cd, &temp_cmd);
+			ret = goodix_open_test(cd);
+			cd->hw_ops->reset(cd, 100);
+			if (ret != -EAGAIN)
+				break;
+		}
 	}
 
 	if (ts_test->item[GTP_NOISE_TEST]) {
-		ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
-		if (ret < 0)
-			ts_err("enter test mode failed");
-		goodix_noise_test(cd);
-		cd->hw_ops->reset(cd, 100);
+		for (i = 0; i < 3; i++) {
+			cd->hw_ops->send_cmd(cd, &temp_cmd);
+			ret = goodix_noise_test(cd);
+			cd->hw_ops->reset(cd, 100);
+			if (ret != -EAGAIN)
+				break;
+		}
 	}
 
 	if (ts_test->item[GTP_SELFCAP_TEST]) {
-		goodix_self_open_test(cd);
-		cd->hw_ops->reset(cd, 100);
+		for (i = 0; i < 3; i++) {
+			ret = goodix_self_open_test(cd);
+			cd->hw_ops->reset(cd, 100);
+			if (ret != -EAGAIN)
+				break;
+		}
 	}
 
 	if (ts_test->item[GTP_SHORT_TEST]) {
@@ -3378,6 +3387,14 @@ exit:
 	goodix_ts_esd_on(cd);
 }
 
+static void goodix_brlb_get_freq(struct goodix_ts_core *cd)
+{
+	u8 val;
+
+	cd->hw_ops->read(cd, 0x10219 + 5, &val, 1);
+	index = sprintf(rbuf, "%s: %dHz\n", CMD_GET_TX_FREQ, val * 61 * 61);
+}
+
 static void goodix_force_update(struct goodix_ts_core *cd)
 {
 	int i;
@@ -3777,9 +3794,12 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 			ts_err("failed to alloc rbuf");
 			goto exit;
 		}
-		ret = get_cap_data(cd, CMD_GET_TX_FREQ);
-		if (ret < 0) {
-			index = sprintf(rbuf, "%s: NG\n", CMD_GET_TX_FREQ);
+		if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+			goodix_brlb_get_freq(cd);
+		} else {
+			ret = get_cap_data(cd, CMD_GET_TX_FREQ);
+			if (ret < 0)
+				index = sprintf(rbuf, "%s: NG\n", CMD_GET_TX_FREQ);
 		}
 		goto exit;
 	}
