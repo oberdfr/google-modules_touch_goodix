@@ -57,14 +57,14 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.2.6"
+#define GOODIX_DRIVER_VERSION "v1.2.9"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
 #define GOODIX_PEN_MAX_TILT 90
 #define GOODIX_CFG_MAX_SIZE 4096
 #define GOODIX_FW_MAX_SIEZE (300 * 1024)
-#define GOODIX_MAX_STR_LABEL_LEN 32
+#define GOODIX_MAX_STR_LABEL_LEN 36
 #define GOODIX_MAX_FRAMEDATA_LEN (3 * 1024)
 #define GOODIX_GESTURE_DATA_LEN 16
 #define GOODIX_REQUEST_DATA_LEN 16
@@ -761,6 +761,9 @@ struct goodix_ts_hw_ops {
 	int (*after_event_handler)(struct goodix_ts_core *cd);
 	int (*get_capacitance_data)(
 		struct goodix_ts_core *cd, struct ts_rawdata_info *info);
+	int (*read_flash)(
+		struct goodix_ts_core *cd, u32 addr, u8 *buf, int len);
+/* [GOOG] */
 	int (*ping)(struct goodix_ts_core *cd);
 	int (*get_scan_mode)(struct goodix_ts_core *cd, enum raw_scan_mode* mode);
 	int (*set_scan_mode)(struct goodix_ts_core *cd, enum raw_scan_mode mode);
@@ -784,6 +787,9 @@ struct goodix_ts_hw_ops {
 	int (*get_coord_filter_enabled)(
 		struct goodix_ts_core *cd, bool* enabled);
 	int (*set_report_rate)(struct goodix_ts_core *cd, u32 rate);
+	u32 (*get_ms_data_addr)(struct goodix_ts_core *cd, enum frame_data_type type);
+	u32 (*get_ss_data_addr)(struct goodix_ts_core *cd, enum frame_data_type type);
+/*~[GOOG] */
 };
 
 /*
@@ -883,6 +889,7 @@ struct goodix_ts_core {
 	uint16_t *self_sensing_data;
 	uint16_t *mutual_data_manual;
 	uint16_t *self_sensing_data_manual;
+	u8 flash_pid[8]; /* optional: only available for IC_TYPE_BERLIN_D */
 	/*~[GOOG] */
 
 	int power_on;

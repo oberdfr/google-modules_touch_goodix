@@ -263,34 +263,24 @@ int brl_suspend(struct goodix_ts_core *cd)
 {
 	u32 cmd_reg = cd->ic_info.misc.cmd_addr;
 	u8 sleep_cmd[] = { 0x00, 0x00, 0x05, 0xC4, 0x01, 0xCA, 0x00 };
+	u8 sleep_cmd_brlb[] = { 0x00, 0x00, 0x05, 0xCA, 0x01, 0xD0, 0x00 };
+	int ret; /* [GOOG] */
 
-	return cd->hw_ops->write(cd, cmd_reg, sleep_cmd, sizeof(sleep_cmd));
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B)
+		ret = cd->hw_ops->write(cd, cmd_reg, sleep_cmd_brlb, sizeof(sleep_cmd_brlb));
+	else
+		ret = cd->hw_ops->write(cd, cmd_reg, sleep_cmd, sizeof(sleep_cmd));
+	return ret;
 }
 
 int brl_resume(struct goodix_ts_core *cd)
 {
 	u32 cmd_reg = cd->ic_info.misc.cmd_addr;
 	u8 cmd_buf[] = { 0x00, 0x00, 0x04, 0xA7, 0xAB, 0x00 };
-	int retry = 20;
-	u8 rcv_buf[2];
+	int ret; /* [GOOG] */
 
-	cd->hw_ops->write(cd, cmd_reg, cmd_buf, sizeof(cmd_buf));
-
-	while (retry--) {
-		usleep_range(5000, 5100);
-		cd->hw_ops->read(cd, cmd_reg, rcv_buf, sizeof(rcv_buf));
-		if (rcv_buf[0] == 0x80 && rcv_buf[1] == 0x80)
-			break;
-	}
-	if (retry < 0) {
-		ts_err("failed to exit sleep mode, status[%X] ack[%X]",
-			rcv_buf[0], rcv_buf[1]);
-		return -EINVAL;
-	} else {
-		ts_info("Succeed to exit sleep mode with retry: %d", 19 - retry);
-	}
-
-	return 0;
+	ret = cd->hw_ops->write(cd, cmd_reg, cmd_buf, sizeof(cmd_buf));
+	return ret;
 }
 
 #define GOODIX_GESTURE_CMD_BA 0x12
@@ -1697,14 +1687,16 @@ int brl_get_mutual_data(struct goodix_ts_core *cd, enum frame_data_type type)
 	int retry = 20;
 	struct goodix_ts_cmd cmd = { 0 };
 
-	mutual_addr = cd->ic_info.misc.frame_data_addr +
-		      cd->ic_info.misc.frame_data_head_len +
-		      cd->ic_info.misc.fw_attr_len +
-		      cd->ic_info.misc.fw_log_len + 8;
-
-	cmd.cmd = GOODIX_CMD_SET_FRAMEDATA_ENABLED;
-	cmd.len = 5;
-	cmd.data[0] = type;
+	mutual_addr = cd->hw_ops->get_ms_data_addr(cd, type);
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+		flag_addr = cd->ic_info.misc.touch_data_addr;
+		cmd.cmd = 0x01;
+		cmd.len = 4;
+	} else {
+		cmd.cmd = GOODIX_CMD_SET_FRAMEDATA_ENABLED;
+		cmd.len = 5;
+		cmd.data[0] = type;
+	}
 	ret = cd->hw_ops->send_cmd(cd, &cmd);
 	if (ret < 0) {
 		ts_err("report rawdata failed, exit!");
@@ -1763,14 +1755,16 @@ int brl_get_self_sensing_data(struct goodix_ts_core *cd, enum frame_data_type ty
 	int retry = 20;
 	struct goodix_ts_cmd cmd = { 0 };
 
-	self_addr = cd->ic_info.misc.frame_data_addr +
-		    cd->ic_info.misc.frame_data_head_len +
-		    cd->ic_info.misc.fw_attr_len + cd->ic_info.misc.fw_log_len +
-		    cd->ic_info.misc.mutual_struct_len + 10;
-
-	cmd.cmd = GOODIX_CMD_SET_FRAMEDATA_ENABLED;
-	cmd.len = 5;
-	cmd.data[0] = type;
+	self_addr = cd->hw_ops->get_ss_data_addr(cd, type);
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+		flag_addr = cd->ic_info.misc.touch_data_addr;
+		cmd.cmd = 0x01;
+		cmd.len = 4;
+	} else {
+		cmd.cmd = GOODIX_CMD_SET_FRAMEDATA_ENABLED;
+		cmd.len = 5;
+		cmd.data[0] = type;
+	}
 	ret = cd->hw_ops->send_cmd(cd, &cmd);
 	if (ret < 0) {
 		ts_err("report rawdata failed, exit!");
@@ -1877,6 +1871,165 @@ static int brl_set_report_rate(
 	return ret;
 }
 
+typedef struct __attribute__((packed)) {
+	uint32_t checksum;
+	uint32_t address;
+	uint32_t length;
+} flash_head_info_t;
+
+#define FLASH_CMD_R_START 0x09
+#define FLASH_CMD_W_START 0x0A
+#define FLASH_CMD_RW_FINISH 0x0B
+#define FLASH_CMD_STATE_READY 0x04
+#define FLASH_CMD_STATE_CHECKERR 0x05
+#define FLASH_CMD_STATE_DENY 0x06
+#define FLASH_CMD_STATE_OKAY 0x07
+static int goodix_flash_cmd(
+	struct goodix_ts_core *cd, uint8_t cmd, uint8_t status, int retry_count)
+{
+	u8 cmd_buf[] = { 0x00, 0x00, 0x04, 0x00, 0x00, 0x00 };
+	int ret;
+	int i;
+	u8 r_sta;
+
+	cmd_buf[3] = cmd;
+	goodix_append_checksum(&cmd_buf[2], 2, CHECKSUM_MODE_U8_LE);
+	ret = cd->hw_ops->write(
+		cd, cd->ic_info.misc.cmd_addr, cmd_buf, sizeof(cmd_buf));
+	if (ret < 0)
+		return ret;
+
+	if (retry_count == 0)
+		return 0;
+
+	for (i = 0; i < retry_count; i++) {
+		mdelay(2);
+		ret = cd->hw_ops->read(
+			cd, cd->ic_info.misc.cmd_addr, &r_sta, 1);
+		if (ret == 0 && r_sta == status)
+			return 0;
+	}
+
+	ts_err("r_sta[0x%x] != status[0x%x]", r_sta, status);
+	return -EINVAL;
+}
+
+static int brl_flash_read(struct goodix_ts_core *cd, u32 addr, u8 *buf, int len)
+{
+	int i;
+	int ret;
+	u8 *tmp_buf;
+	u32 buffer_addr = cd->ic_info.misc.fw_buffer_addr;
+	uint32_t checksum = 0;
+	flash_head_info_t head_info;
+	u8 *p = (u8 *)&head_info.address;
+
+	tmp_buf = kzalloc(len + sizeof(flash_head_info_t), GFP_KERNEL);
+	if (!tmp_buf)
+		return -ENOMEM;
+
+	head_info.address = cpu_to_le32(addr);
+	head_info.length = cpu_to_le32(len);
+	for (i = 0; i < 8; i += 2)
+		checksum += p[i] | (p[i + 1] << 8);
+	head_info.checksum = checksum;
+
+	ret = goodix_flash_cmd(
+		cd, FLASH_CMD_R_START, FLASH_CMD_STATE_READY, 15);
+	if (ret < 0) {
+		ts_err("failed enter flash read state");
+		goto read_end;
+	}
+
+	ret = cd->hw_ops->write(
+		cd, buffer_addr, (u8 *)&head_info, sizeof(head_info));
+	if (ret < 0) {
+		ts_err("failed write flash head info");
+		goto read_end;
+	}
+
+	ret = goodix_flash_cmd(
+		cd, FLASH_CMD_RW_FINISH, FLASH_CMD_STATE_OKAY, 50);
+	if (ret) {
+		ts_err("failed read flash ready state");
+		goto read_end;
+	}
+
+	ret = cd->hw_ops->read(
+		cd, buffer_addr, tmp_buf, len + sizeof(flash_head_info_t));
+	if (ret < 0) {
+		ts_err("failed read data len %lu",
+			len + sizeof(flash_head_info_t));
+		goto read_end;
+	}
+
+	checksum = 0;
+	for (i = 0; i < len + sizeof(flash_head_info_t) - 4; i += 2)
+		checksum += tmp_buf[4 + i] | (tmp_buf[5 + i] << 8);
+
+	if (checksum != le32_to_cpup((__le32 *)tmp_buf)) {
+		ts_err("read back data checksum error");
+		ret = -EINVAL;
+		goto read_end;
+	}
+
+	memcpy(buf, tmp_buf + sizeof(flash_head_info_t), len);
+	ret = 0;
+read_end:
+	goodix_flash_cmd(cd, 0x0C, 0, 0);
+	return ret;
+}
+
+static u32 brl_get_ms_data_addr(struct goodix_ts_core *cd, enum frame_data_type type)
+{
+	u32 addr = cd->ic_info.misc.frame_data_addr +
+			cd->ic_info.misc.frame_data_head_len +
+			cd->ic_info.misc.fw_attr_len +
+			cd->ic_info.misc.fw_log_len + 8;
+
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+		switch (type) {
+		case FRAME_DATA_TYPE_RAW:
+			addr = cd->ic_info.misc.mutual_rawdata_addr;
+			break;
+		case FRAME_DATA_TYPE_BASE:
+			addr = cd->ic_info.misc.mutual_refdata_addr;
+			break;
+		case FRAME_DATA_TYPE_DIFF:
+		default:
+			addr = cd->ic_info.misc.mutual_diffdata_addr;
+			break;
+		}
+	}
+
+	return addr;
+}
+
+static u32 brl_get_ss_data_addr(struct goodix_ts_core *cd, enum frame_data_type type)
+{
+	u32 addr = cd->ic_info.misc.frame_data_addr +
+			cd->ic_info.misc.frame_data_head_len +
+			cd->ic_info.misc.fw_attr_len + cd->ic_info.misc.fw_log_len +
+			cd->ic_info.misc.mutual_struct_len + 10;
+
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+		switch (type) {
+		case FRAME_DATA_TYPE_RAW:
+			addr = cd->ic_info.misc.self_rawdata_addr;
+			break;
+		case FRAME_DATA_TYPE_BASE:
+			addr = cd->ic_info.misc.self_refdata_addr;
+			break;
+		case FRAME_DATA_TYPE_DIFF:
+		default:
+			addr = cd->ic_info.misc.self_diffdata_addr;
+			break;
+		}
+	}
+
+	return addr;
+}
+
 static struct goodix_ts_hw_ops brl_hw_ops = {
 	.power_on = brl_power_on,
 	.resume = brl_resume,
@@ -1897,6 +2050,8 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 	.event_handler = brl_event_handler,
 	.after_event_handler = brl_after_event_handler,
 	.get_capacitance_data = brl_get_capacitance_data,
+	.read_flash = brl_flash_read,
+/* [GOOG] */
 	.ping = brl_dev_confirm,
 	.get_scan_mode = brl_get_scan_mode,
 	.set_scan_mode = brl_set_scan_mode,
@@ -1915,6 +2070,9 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 	.set_coord_filter_enabled = brl_set_coord_filter_enabled,
 	.get_coord_filter_enabled = brl_get_coord_filter_enabled,
 	.set_report_rate = brl_set_report_rate,
+	.get_ms_data_addr = brl_get_ms_data_addr,
+	.get_ss_data_addr = brl_get_ss_data_addr,
+/*~[GOOG] */
 };
 
 struct goodix_ts_hw_ops *goodix_get_hw_ops(void)

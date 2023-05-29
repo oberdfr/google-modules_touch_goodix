@@ -94,7 +94,7 @@ const static char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 #define GRIP_FUNC 3
 
 #define SHORT_SIZE 150
-#define LARGE_SIZE 5 * 1024
+#define LARGE_SIZE (10 * 1024)
 #define MAX_FRAME_CNT 50
 #define HUGE_SIZE MAX_FRAME_CNT * 20 * 1024
 static char wbuf[SHORT_SIZE];
@@ -1098,113 +1098,6 @@ static int goodix_shortcircut_test(struct goodix_ts_core *cd)
 	return ret;
 }
 
-typedef struct __attribute__((packed)) {
-	uint32_t checksum;
-	uint32_t address;
-	uint32_t length;
-} flash_head_info_t;
-
-#define FLASH_CMD_R_START 0x09
-#define FLASH_CMD_W_START 0x0A
-#define FLASH_CMD_RW_FINISH 0x0B
-#define FLASH_CMD_STATE_READY 0x04
-#define FLASH_CMD_STATE_CHECKERR 0x05
-#define FLASH_CMD_STATE_DENY 0x06
-#define FLASH_CMD_STATE_OKAY 0x07
-static int goodix_flash_cmd(struct goodix_ts_core *cd,
-		uint8_t cmd, uint8_t status, int retry_count)
-{
-	u8 cmd_buf[] = { 0x00, 0x00, 0x04, 0x00, 0x00, 0x00 };
-	int ret;
-	int i;
-	u8 r_sta;
-
-	cmd_buf[3] = cmd;
-	goodix_append_checksum(&cmd_buf[2], 2, CHECKSUM_MODE_U8_LE);
-	ret = cd->hw_ops->write(
-		cd, cd->ic_info.misc.cmd_addr, cmd_buf, sizeof(cmd_buf));
-	if (ret < 0)
-		return ret;
-
-	if (retry_count == 0)
-		return 0;
-
-	for (i = 0; i < retry_count; i++) {
-		usleep_range(2000, 2100);
-		ret = cd->hw_ops->read(
-			cd, cd->ic_info.misc.cmd_addr, &r_sta, 1);
-		if (ret == 0 && r_sta == status)
-			return 0;
-	}
-
-	ts_err("r_sta[0x%x] != status[0x%x]", r_sta, status);
-	return -EINVAL;
-}
-
-static int goodix_flash_read(struct goodix_ts_core *cd, u32 addr, u8 *buf, int len)
-{
-	int i;
-	int ret;
-	u8 *tmp_buf;
-	u32 buffer_addr = cd->ic_info.misc.fw_buffer_addr;
-	uint32_t checksum = 0;
-	flash_head_info_t head_info;
-	u8 *p = (u8 *)&head_info.address;
-
-	tmp_buf = kzalloc(len + sizeof(flash_head_info_t), GFP_KERNEL);
-	if (!tmp_buf)
-		return -ENOMEM;
-
-	head_info.address = cpu_to_le32(addr);
-	head_info.length = cpu_to_le32(len);
-	for (i = 0; i < 8; i += 2)
-		checksum += p[i] | (p[i + 1] << 8);
-	head_info.checksum = checksum;
-
-	ret = goodix_flash_cmd(cd, FLASH_CMD_R_START, FLASH_CMD_STATE_READY, 15);
-	if (ret < 0) {
-		ts_err("failed enter flash read state");
-		goto read_end;
-	}
-
-	ret = cd->hw_ops->write(
-		cd, buffer_addr, (u8 *)&head_info, sizeof(head_info));
-	if (ret < 0) {
-		ts_err("failed write flash head info");
-		goto read_end;
-	}
-
-	ret = goodix_flash_cmd(cd, FLASH_CMD_RW_FINISH, FLASH_CMD_STATE_OKAY, 50);
-	if (ret) {
-		ts_err("faild read flash ready state");
-		goto read_end;
-	}
-
-	ret = cd->hw_ops->read(
-		cd, buffer_addr, tmp_buf, len + sizeof(flash_head_info_t));
-	if (ret < 0) {
-		ts_err("failed read data len %lu",
-			len + sizeof(flash_head_info_t));
-		goto read_end;
-	}
-
-	checksum = len % 2 ? tmp_buf[len + sizeof(flash_head_info_t) - 1] : 0;
-	for (i = 0; i < len + sizeof(flash_head_info_t) - 6; i += 2)
-		checksum += tmp_buf[4 + i] | (tmp_buf[5 + i] << 8);
-
-	if (checksum != le32_to_cpup((__le32 *)tmp_buf)) {
-		ts_err("read back data checksum error");
-		ret = -EINVAL;
-		goto read_end;
-	}
-
-	memcpy(buf, tmp_buf + sizeof(flash_head_info_t), len);
-	ret = 0;
-read_end:
-	goodix_flash_cmd(cd, 0x0C, 0, 0);
-	return ret;
-}
-
 static void *seq_start(struct seq_file *s, loff_t *pos)
 {
 	if (*pos >= index)
@@ -2013,6 +1906,12 @@ static int goodix_open_test(struct goodix_ts_core *cd)
 	temp_cmd.cmd = 0x90;
 	temp_cmd.data[0] = 0x84;
 	temp_cmd.len = 5;
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+		sync_addr = cd->ic_info.misc.touch_data_addr;
+		raw_addr = cd->ic_info.misc.mutual_rawdata_addr;
+		temp_cmd.cmd = 0x1;
+		temp_cmd.len = 4;
+	}
 	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
 	if (ret < 0) {
 		ts_err("send rawdata cmd failed");
@@ -2055,7 +1954,7 @@ static int goodix_open_test(struct goodix_ts_core *cd)
 		if (retry < 0) {
 			ts_err("rawdata is not ready val:0x%02x i:%d, exit",
 				val, i);
-			ret = -EINVAL;
+			ret = -EAGAIN;
 			goto exit;
 		}
 
@@ -2119,6 +2018,12 @@ static int goodix_self_open_test(struct goodix_ts_core *cd)
 	temp_cmd.cmd = 0x90;
 	temp_cmd.data[0] = 0x84;
 	temp_cmd.len = 5;
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+		sync_addr = cd->ic_info.misc.touch_data_addr;
+		raw_addr = cd->ic_info.misc.self_rawdata_addr;
+		temp_cmd.cmd = 0x1;
+		temp_cmd.len = 4;
+	}
 	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
 	if (ret < 0) {
 		ts_err("send rawdata cmd failed");
@@ -2144,7 +2049,7 @@ static int goodix_self_open_test(struct goodix_ts_core *cd)
 	}
 	if (retry < 0) {
 		ts_err("self rawdata is not ready val:0x%02x, exit", val);
-		ret = -EINVAL;
+		ret = -EAGAIN;
 		goto exit;
 	}
 
@@ -2197,6 +2102,12 @@ static int goodix_noise_test(struct goodix_ts_core *cd)
 	temp_cmd.cmd = 0x90;
 	temp_cmd.data[0] = 0x82;
 	temp_cmd.len = 5;
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+		sync_addr = cd->ic_info.misc.touch_data_addr;
+		raw_addr = cd->ic_info.misc.mutual_diffdata_addr;
+		temp_cmd.cmd = 0x1;
+		temp_cmd.len = 4;
+	}
 	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
 	if (ret < 0) {
 		ts_err("send rawdata cmd failed");
@@ -2224,7 +2135,7 @@ static int goodix_noise_test(struct goodix_ts_core *cd)
 		if (retry < 0) {
 			ts_err("noisedata is not ready val:0x%02x i:%d, exit",
 				val, i);
-			ret = -EINVAL;
+			ret = -EAGAIN;
 			goto exit;
 		}
 
@@ -2462,6 +2373,7 @@ static int goodix_auto_test(struct goodix_ts_core *cd, bool is_brief)
 {
 	struct goodix_ts_cmd temp_cmd;
 	int ret;
+	int i;
 
 	ret = goodix_obtain_testlimits(cd);
 	if (ret < 0) {
@@ -2477,24 +2389,32 @@ static int goodix_auto_test(struct goodix_ts_core *cd, bool is_brief)
 	temp_cmd.data[0] = 1;
 
 	if (ts_test->item[GTP_CAP_TEST]) {
-		ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
-		if (ret < 0)
-			ts_err("enter test mode failed");
-		goodix_open_test(cd);
-		cd->hw_ops->reset(cd, 100);
+		for (i = 0; i < 3; i++) {
+			cd->hw_ops->send_cmd(cd, &temp_cmd);
+			ret = goodix_open_test(cd);
+			cd->hw_ops->reset(cd, 100);
+			if (ret != -EAGAIN)
+				break;
+		}
 	}
 
 	if (ts_test->item[GTP_NOISE_TEST]) {
-		ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
-		if (ret < 0)
-			ts_err("enter test mode failed");
-		goodix_noise_test(cd);
-		cd->hw_ops->reset(cd, 100);
+		for (i = 0; i < 3; i++) {
+			cd->hw_ops->send_cmd(cd, &temp_cmd);
+			ret = goodix_noise_test(cd);
+			cd->hw_ops->reset(cd, 100);
+			if (ret != -EAGAIN)
+				break;
+		}
 	}
 
 	if (ts_test->item[GTP_SELFCAP_TEST]) {
-		goodix_self_open_test(cd);
-		cd->hw_ops->reset(cd, 100);
+		for (i = 0; i < 3; i++) {
+			ret = goodix_self_open_test(cd);
+			cd->hw_ops->reset(cd, 100);
+			if (ret != -EAGAIN)
+				break;
+		}
 	}
 
 	if (ts_test->item[GTP_SHORT_TEST]) {
@@ -2519,7 +2439,6 @@ static int goodix_auto_test(struct goodix_ts_core *cd, bool is_brief)
 static void goodix_auto_noise_test(struct goodix_ts_core *cd, u16 cnt, int threshold)
 {
 	struct goodix_ts_cmd temp_cmd;
-	struct goodix_ts_cmd rb_cmd;
 	u32 sync_addr = cd->ic_info.misc.frame_data_addr;
 	u32 raw_addr;
 	int tx = cd->ic_info.parm.drv_num;
@@ -2529,7 +2448,7 @@ static void goodix_auto_noise_test(struct goodix_ts_core *cd, u16 cnt, int thres
 	u8 status;
 	int test_try = 2;
 	int ret = 0;
-	int retry = 10;
+	int retry = 20;
 	int err_cnt = 0;
 	int i;
 
@@ -2551,12 +2470,14 @@ restart:
 	temp_cmd.data[0] = 0x86;
 	temp_cmd.data[1] = cnt & 0xFF;
 	temp_cmd.data[2] = (cnt >> 8) & 0xFF;
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+		temp_cmd.data[0] = 0x87;
+		sync_addr = cd->ic_info.misc.touch_data_addr;
+		raw_addr = cd->ic_info.misc.mutual_diffdata_addr;
+	}
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
-	cd->hw_ops->read(
-		cd, cd->ic_info.misc.cmd_addr, rb_cmd.buf, sizeof(rb_cmd));
-	ts_info("rb_cmd:%*ph", (int)sizeof(rb_cmd), rb_cmd.buf);
 
-	msleep(cnt * 20);
+	msleep(cnt * 8);
 
 	while (retry--) {
 		cd->hw_ops->read(cd, sync_addr, &status, 1);
@@ -2675,6 +2596,25 @@ static int get_cap_data(struct goodix_ts_core *cd, uint8_t *type)
 
 	temp_cmd.cmd = 0x90;
 	temp_cmd.len = 5;
+
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+		flag_addr = cd->ic_info.misc.touch_data_addr;
+		if (strstr(type, CMD_GET_BASEDATA))
+			mutual_addr = cd->ic_info.misc.mutual_refdata_addr;
+		else if (strstr(type, CMD_GET_RAWDATA))
+			mutual_addr = cd->ic_info.misc.mutual_rawdata_addr;
+		else if (strstr(type, CMD_GET_DIFFDATA))
+			mutual_addr = cd->ic_info.misc.mutual_diffdata_addr;
+		else if (strstr(type, CMD_GET_SELF_BASEDATA))
+			self_addr = cd->ic_info.misc.self_refdata_addr;
+		else if (strstr(type, CMD_GET_SELF_RAWDATA))
+			self_addr = cd->ic_info.misc.self_rawdata_addr;
+		else if (strstr(type, CMD_GET_SELF_DIFFDATA))
+			self_addr = cd->ic_info.misc.self_diffdata_addr;
+		temp_cmd.cmd = 0x01;
+		temp_cmd.len = 4;
+	}
+
 	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
 	if (ret < 0) {
 		ts_err("report rawdata failed, exit!");
@@ -2748,7 +2688,14 @@ exit:
 	temp_cmd.cmd = 0x90;
 	temp_cmd.data[0] = 0;
 	temp_cmd.len = 5;
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+		temp_cmd.cmd = 0x00;
+		temp_cmd.len = 4;
+	}
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
+	/* clean touch event flag */
+	val = 0;
+	cd->hw_ops->write(cd, flag_addr, &val, 1);
 	/* enable irq & esd */
 	cd->hw_ops->irq_enable(cd, true);
 	goodix_ts_esd_on(cd);
@@ -2927,19 +2874,13 @@ static void goodix_get_fw_status(struct goodix_ts_core *cd)
 static void goodix_set_highsense_mode(struct goodix_ts_core *cd, u8 val)
 {
 	struct goodix_ts_cmd temp_cmd;
-	static bool flag = false;
 
-	if (val == 0 && flag) {
-		flag = false;
+	if (val == 0) {
 		ts_info("exit highsense mode");
 		index = sprintf(rbuf, "exit highsense mode\n");
-	} else if (val == 1 && !flag) {
-		flag = true;
+	} else {
 		ts_info("enter highsense mode");
 		index = sprintf(rbuf, "enter highsense mode\n");
-	} else {
-		ts_info("have already %s", val ? "ON" : "OFF");
-		return;
 	}
 
 	temp_cmd.len = 5;
@@ -3201,6 +3142,10 @@ static void goodix_set_heatmap(struct goodix_ts_core *cd, int val)
 		temp_cmd.len = 5;
 		temp_cmd.cmd = 0xC9;
 		temp_cmd.data[0] = 0;
+		if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+			temp_cmd.len = 4;
+			temp_cmd.cmd = 0x0;
+		}
 	} else {
 		index = sprintf(rbuf, "enable heatmap\n");
 /*
@@ -3211,6 +3156,10 @@ static void goodix_set_heatmap(struct goodix_ts_core *cd, int val)
 		temp_cmd.len = 5;
 		temp_cmd.cmd = 0xC9;
 		temp_cmd.data[0] = 1;
+		if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+			temp_cmd.len = 4;
+			temp_cmd.cmd = 0x1;
+		}
 	}
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 	cd->hw_ops->irq_enable(cd, true);
@@ -3436,6 +3385,14 @@ exit:
 	/* enable irq & esd */
 	cd->hw_ops->irq_enable(cd, true);
 	goodix_ts_esd_on(cd);
+}
+
+static void goodix_brlb_get_freq(struct goodix_ts_core *cd)
+{
+	u8 val;
+
+	cd->hw_ops->read(cd, 0x10219 + 5, &val, 1);
+	index = sprintf(rbuf, "%s: %dHz\n", CMD_GET_TX_FREQ, val * 61 * 61);
 }
 
 static void goodix_force_update(struct goodix_ts_core *cd)
@@ -3837,9 +3794,12 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 			ts_err("failed to alloc rbuf");
 			goto exit;
 		}
-		ret = get_cap_data(cd, CMD_GET_TX_FREQ);
-		if (ret < 0) {
-			index = sprintf(rbuf, "%s: NG\n", CMD_GET_TX_FREQ);
+		if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+			goodix_brlb_get_freq(cd);
+		} else {
+			ret = get_cap_data(cd, CMD_GET_TX_FREQ);
+			if (ret < 0)
+				index = sprintf(rbuf, "%s: NG\n", CMD_GET_TX_FREQ);
 		}
 		goto exit;
 	}
@@ -3888,7 +3848,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 			goto exit;
 		}
 		noise_data_cnt = cmd_val;
-		rbuf = vzalloc(noise_data_cnt * 2000 + 5000);
+		rbuf = vzalloc(noise_data_cnt * 13000);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3939,7 +3899,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 		}
 		mutex_lock(&cd->cmd_lock);
 		usleep_range(6000, 6100);
-		ret = goodix_flash_read(cd, 0x1F301, &id, 1);
+		ret = cd->hw_ops->read_flash(cd, 0x1F301, &id, 1);
 		mutex_unlock(&cd->cmd_lock);
 		if (ret < 0)
 			index = sprintf(rbuf, "%s: NG\n", CMD_GET_PACKAGE_ID);
@@ -3957,7 +3917,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 		}
 		mutex_lock(&cd->cmd_lock);
 		usleep_range(6000, 6100);
-		ret = goodix_flash_read(cd, 0x1F314, &id, 1);
+		ret = cd->hw_ops->read_flash(cd, 0x1F314, &id, 1);
 		mutex_unlock(&cd->cmd_lock);
 		if (ret < 0)
 			index = sprintf(rbuf, "%s: NG\n", CMD_GET_MCU_ID);
@@ -4049,7 +4009,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 			goto exit;
 		}
 		raw_data_cnt = cmd_val;
-		rbuf = vzalloc(raw_data_cnt * 5000 + 10000);
+		rbuf = vzalloc(raw_data_cnt * 13000);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
