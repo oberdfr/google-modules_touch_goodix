@@ -248,22 +248,22 @@ static int goodix_parse_firmware(struct goodix_ts_core *cd,
 	}
 
 	ts_info("Firmware package protocol: V%u", fw_summary->protocol_ver);
-	ts_info("Firmware PID:GT%s", fw_summary->fw_pid);
-	ts_info("Firmware VID:%*ph", 4, fw_summary->fw_vid);
-	ts_info("Firmware chip type:0x%02X", fw_summary->chip_type);
-	ts_info("Firmware bus type:%s",
+	ts_info("Firmware PID: GT%s", fw_summary->fw_pid);
+	ts_info("Firmware VID: %*ph", 4, fw_summary->fw_vid);
+	ts_info("Firmware chip type: 0x%02X", fw_summary->chip_type);
+	ts_info("Firmware bus type: %s",
 		(fw_summary->bus_type & BUS_TYPE_SPI) ? "SPI" : "I2C");
-	ts_info("Firmware size:%u", fw_summary->size);
-	ts_info("Firmware subsystem num:%u", fw_summary->subsys_num);
+	ts_info("Firmware size: %u", fw_summary->size);
+	ts_info("Firmware subsystem num: %u", fw_summary->subsys_num);
 
 	for (i = 0; i < fw_summary->subsys_num; i++) {
 		ts_debug("------------------------------------------");
-		ts_debug("Index:%d", i);
-		ts_debug("Subsystem type:%02X", fw_summary->subsys[i].type);
-		ts_debug("Subsystem size:%u", fw_summary->subsys[i].size);
-		ts_debug("Subsystem flash_addr:%08X",
+		ts_debug("Index: %d", i);
+		ts_debug("Subsystem type: %02X", fw_summary->subsys[i].type);
+		ts_debug("Subsystem size: %u", fw_summary->subsys[i].size);
+		ts_debug("Subsystem flash_addr: %08X",
 			fw_summary->subsys[i].flash_addr);
-		ts_debug("Subsystem Ptr:%p", fw_summary->subsys[i].data);
+		ts_debug("Subsystem Ptr: %p", fw_summary->subsys[i].data);
 
 		if (fw_summary->subsys[i].type == CONFIG_DATA_TYPE) {
 			one_binary_cfg->len = fw_summary->subsys[i].size;
@@ -1135,9 +1135,32 @@ int goodix_do_fw_update(struct goodix_ts_core *cd, int mode)
 	return 0;
 }
 
+/*
+ * [GOOG]
+ * Read PID from flash.
+ * This is only available for IC_TYPE_BERLIN_D.
+ */
+static int goodix_read_pid_from_flash(struct goodix_ts_core *cd)
+{
+	u8 *buf = cd->flash_pid;
+	int ret;
+
+	if (cd->bus && cd->bus->ic_type != IC_TYPE_BERLIN_D)
+		return -EOPNOTSUPP;
+
+	ret = cd->hw_ops->read_flash(cd, 0x1F020 + 17, buf, sizeof(buf));
+	if (ret < 0) {
+		ts_err("read flash 0x%04x failed", 0x1F020 + 17);
+		return ret;
+	}
+	ts_info("pid from flash is %s", buf);
+	return 0;
+}
+
 int goodix_fw_update_init(struct goodix_ts_core *core_data)
 {
 	int ret;
+	struct goodix_ts_board_data *bdata;
 
 	if (!core_data || !core_data->hw_ops) {
 		ts_err("core_data && hw_ops cann't be null");
@@ -1147,6 +1170,38 @@ int goodix_fw_update_init(struct goodix_ts_core *core_data)
 	mutex_init(&core_data->update_ctrl.mutex);
 	core_data->update_ctrl.core_data = core_data;
 	core_data->update_ctrl.mode = 0;
+
+/*
+ * [GOOG]
+ * Suffix 'flash_pid' to firmware name that used by request_firmware()
+ * when 'goodix,pid-suffix-fw-map' property matched.
+ * e.g.:
+ *   goodix,pid-suffix-fw-map = "9916P";
+ *   'flash_pid' = 9916P
+ *   'fw_name' -> goodix_firmware.bin.9916P
+ *   'cfg_bin_name' -> goodix_cfg_group.bin.9916P
+ *   'test_limits_name' -> goodix_test_limits_255.csv.9916P
+ */
+	bdata = &core_data->board_data;
+	ret = goodix_read_pid_from_flash(core_data);
+	if (ret == 0 && core_data->bus && core_data->bus->dev) {
+		ret = of_property_match_string(core_data->bus->dev->of_node,
+			"goodix,pid-suffix-fw-map", core_data->flash_pid);
+		if (ret >= 0) {
+			u8 suffix[sizeof(core_data->flash_pid) + 1] = {0};
+
+			scnprintf(suffix, sizeof(suffix), ".%s", core_data->flash_pid);
+			strlcat(bdata->fw_name, suffix, sizeof(bdata->fw_name));
+			ts_info("Update fw_name to %s", bdata->fw_name);
+			if (!bdata->use_one_binary) {
+				strlcat(bdata->cfg_bin_name, suffix, sizeof(bdata->cfg_bin_name));
+				ts_info("Update cfg_bin_name to %s", bdata->cfg_bin_name);
+			}
+			strlcat(bdata->test_limits_name, suffix, sizeof(bdata->test_limits_name));
+			ts_info("Update test_limits_name to %s", bdata->test_limits_name);
+		}
+	}
+/*~[GOOG] */
 
 	strlcpy(core_data->update_ctrl.fw_name, core_data->board_data.fw_name,
 		sizeof(core_data->update_ctrl.fw_name));
