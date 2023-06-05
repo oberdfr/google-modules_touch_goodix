@@ -3455,7 +3455,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	int cmd_val2;
 	u8 id;
 
-	if (count > SHORT_SIZE) {
+	if (count >= SHORT_SIZE) { /* [GOOG] */
 		ts_err("invalid cmd size[%ld]", count);
 		return count;
 	}
@@ -3465,7 +3465,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 		ts_err("copy from user failed");
 		return count;
 	}
-	p[strlen(p) - 1] = 0;
+	//p[strlen(p) - 1] = 0; /* [GOOG] */
 
 	vfree(rbuf);
 	rbuf = NULL;
