@@ -872,8 +872,7 @@ static int get_self_sensor_data(
 		cmd->buffer = (u8 *)cd->self_sensing_data;
 		cmd->size = (tx + rx) * sizeof(uint16_t);
 	} else {
-		/* disable irq & close esd */
-		cd->hw_ops->irq_enable(cd, false);
+		/* disable esd */
 		goodix_ts_esd_off(cd);
 
 		ret = -EINVAL;
@@ -890,8 +889,7 @@ static int get_self_sensor_data(
 			cmd->size = (tx + rx) * sizeof(uint16_t);
 		}
 
-		/* enable irq & esd */
-		cd->hw_ops->irq_enable(cd, true);
+		/* enable esd */
 		goodix_ts_esd_on(cd);
 	}
 	return ret;
@@ -1352,8 +1350,10 @@ static int goodix_parse_dt(
 		ts_info("use one binary");
 
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
-	panel_id = goog_get_panel_id(node);
-	if (panel_id >= 0) {
+	if (of_property_read_bool(node, "goog,panel_map")) {
+		panel_id = goog_get_panel_id(node);
+		if (panel_id < 0)
+			return -EPROBE_DEFER;
 		goog_get_firmware_name(node, panel_id, board_data->fw_name, sizeof(board_data->fw_name));
 		if (!board_data->use_one_binary)
 			goog_get_config_name(node, panel_id, board_data->cfg_bin_name, sizeof(board_data->cfg_bin_name));
@@ -1829,14 +1829,6 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 	struct goodix_ts_esd *ts_esd = &core_data->ts_esd;
 	int ret;
 
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
-	ret = goog_pm_wake_lock(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ, true);
-	if(ret < 0) {
-		ts_info("Error while obtaing IRQ wakelock: %d!\n", ret);
-		return IRQ_HANDLED;
-	}
-#endif
-
 /* [GOOG]
  * Remove the control to enable/disable the interrupt for bottom-half.
 	disable_irq_nosync(core_data->irq);
@@ -1886,10 +1878,6 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
  * Remove the control to enable/disable the interrupt for bottom-half.
 	enable_irq(core_data->irq);
  */
-
-#if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE) && IS_ENABLED(CONFIG_GTI_PM)
-	goog_pm_wake_unlock_nosync(core_data->gti, GTI_PM_WAKELOCK_TYPE_IRQ);
-#endif
 
 	return IRQ_HANDLED;
 }
@@ -2484,7 +2472,11 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
 	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_ACTIVE); /* [GOOG] */
 
 	atomic_set(&core_data->suspended, 0);
-	hw_ops->irq_enable(core_data, false);
+	/* [GOOG]
+	 * This will cause a deadlock with wakelock. Since we already disable irq
+	 * when touch is suspended, we don't need to disable irq here again.
+	 */
+	//hw_ops->irq_enable(core_data, false);
 
 	/* [GOOG] */
 	if (check_gesture_mode(core_data)) {
