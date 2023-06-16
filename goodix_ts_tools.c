@@ -278,7 +278,7 @@ static long goodix_tools_ioctl(
 			goodix_ts_esd_on(ts_core);
 		break;
 	case GTP_DEV_RESET:
-		hw_ops->reset(ts_core, GOODIX_NORMAL_RESET_DELAY_MS);
+		hw_ops->reset(ts_core, goodix_get_normal_reset_delay(ts_core));
 		break;
 	case GTP_SEND_COMMAND:
 		/* deprecated command */

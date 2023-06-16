@@ -57,7 +57,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.2.9"
+#define GOODIX_DRIVER_VERSION "v1.2.10"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -65,10 +65,11 @@
 #define GOODIX_CFG_MAX_SIZE 4096
 #define GOODIX_FW_MAX_SIEZE (300 * 1024)
 #define GOODIX_MAX_STR_LABEL_LEN 36
-#define GOODIX_MAX_FRAMEDATA_LEN (3 * 1024)
+#define GOODIX_MAX_FRAMEDATA_LEN 3600
 #define GOODIX_GESTURE_DATA_LEN 16
 #define GOODIX_REQUEST_DATA_LEN 16
-#define GOODIX_NORMAL_RESET_DELAY_MS 100
+#define GOODIX_NORMAL_RESET_DELAY_MS_DEFAULT 100 /* [GOOG]*/
+#define GOODIX_NORMAL_RESET_DELAY_MS_BERLIN_B 150 /* [GOOG]*/
 #define GOODIX_HOLD_CPU_RESET_DELAY_MS 5
 
 #define GOODIX_RETRY_3 3
@@ -956,6 +957,18 @@ extern bool debug_log_flag;
 			pr_info("[GTP-DBG][%s:%d] " fmt "\n", __func__,        \
 				__LINE__, ##arg);                              \
 	}
+
+/* [GOOG] */
+static inline int goodix_get_normal_reset_delay(struct goodix_ts_core *cd)
+{
+	int delay = GOODIX_NORMAL_RESET_DELAY_MS_DEFAULT;
+
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B)
+		delay = GOODIX_NORMAL_RESET_DELAY_MS_BERLIN_B;
+
+	return delay;
+}
+/*~[GOOG] */
 
 /*
  * get board data pointer

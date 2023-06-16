@@ -95,13 +95,13 @@ const static char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 
 #define SHORT_SIZE 150
 #define LARGE_SIZE (10 * 1024)
-#define MAX_FRAME_CNT 50
-#define HUGE_SIZE MAX_FRAME_CNT * 20 * 1024
+#define HUGE_SIZE  (100 * 1024)
 static char wbuf[SHORT_SIZE];
 static char *rbuf;
 static uint32_t index;
 
 /* factory test */
+#define DISCARD_FRAME_NUMS 6
 #define ABS(x) (((x) >= 0) ? (x) : -(x))
 #define MAX(a, b) ((a > b) ? a : b)
 
@@ -462,6 +462,30 @@ static int cal_cha_to_gnd_res(struct goodix_ts_core *cd, int v)
 	else
 		return 120000 / v - 16;
 }
+
+/*
+ * [GOOG]
+ * Use kvzalloc/kzalloc to alloc instead of vmalloc/kmalloc(vendor).
+ * This will help to use kvfree for all cases w/o additional `malloc_type`.
+ */
+//static u8 malloc_type;
+static inline void *malloc_proc_buffer(size_t size)
+{
+	if (size > HUGE_SIZE)
+		return kvzalloc(size, GFP_KERNEL);
+
+	return kzalloc(size, GFP_KERNEL);
+}
+
+static inline void free_proc_buffer(char **ptr)
+{
+	if (*ptr == NULL)
+		return;
+
+	kvfree(*ptr);
+	*ptr = NULL;
+}
+/*~[GOOG] */
 
 static int malloc_test_resource(void)
 {
@@ -1026,7 +1050,7 @@ resend_cmd:
 	}
 
 	if (resend--) {
-		cd->hw_ops->reset(cd, 100);
+		cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 		goto resend_cmd;
 	}
 
@@ -1051,6 +1075,9 @@ static int goodix_shortcircut_test(struct goodix_ts_core *cd)
 		return ret;
 	}
 
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B)
+		msleep(500);
+
 	/* get short test time */
 	ret = cd->hw_ops->read(cd, ts_test->params_info->short_test_time_reg,
 		(u8 *)&test_time, 2);
@@ -1072,7 +1099,9 @@ static int goodix_shortcircut_test(struct goodix_ts_core *cd)
 	cd->hw_ops->write(cd, SHORT_TEST_RUN_REG, &status, 1);
 
 	/* wait short test finish */
-	msleep(test_time);
+	if (test_time > 0)
+		msleep(test_time);
+
 	retry = 50;
 	while (retry--) {
 		ret = cd->hw_ops->read(cd,
@@ -1122,8 +1151,7 @@ static void seq_stop(struct seq_file *s, void *v)
 {
 	if (s->read_pos >= index) {
 		// ts_info("read_pos:%d", (int)s->read_pos);
-		vfree(rbuf);
-		rbuf = NULL;
+		free_proc_buffer(&rbuf);
 		index = 0;
 		release_test_resource();
 	}
@@ -1420,7 +1448,7 @@ static void goodix_save_data(struct goodix_ts_core *cd)
 				i, tx * rx, stat_result[1], stat_result[2],
 				stat_result[0]);
 			for (j = 0; j < tx * rx; j++) {
-				index += sprintf(&rbuf[index], "%d,",
+				index += sprintf(&rbuf[index], "%5d,",
 					ts_test->rawdata[i].data[j]);
 				if ((j + 1) % tx == 0)
 					index += sprintf(&rbuf[index], "\n");
@@ -1433,7 +1461,7 @@ static void goodix_save_data(struct goodix_ts_core *cd)
 				i, tx * rx, stat_result[1], stat_result[2],
 				stat_result[0]);
 			for (j = 0; j < tx * rx; j++) {
-				index += sprintf(&rbuf[index], "%d,",
+				index += sprintf(&rbuf[index], "%5d,",
 					ts_test->deltadata[i].data[j]);
 				if ((j + 1) % tx == 0)
 					index += sprintf(&rbuf[index], "\n");
@@ -1454,7 +1482,7 @@ static void goodix_save_data(struct goodix_ts_core *cd)
 				i, tx * rx, stat_result[1], stat_result[2],
 				stat_result[0]);
 			for (j = 0; j < tx * rx; j++) {
-				index += sprintf(&rbuf[index], "%d,",
+				index += sprintf(&rbuf[index], "%5d,",
 					ts_test->noisedata[i].data[j]);
 				if ((j + 1) % tx == 0)
 					index += sprintf(&rbuf[index], "\n");
@@ -1474,7 +1502,7 @@ static void goodix_save_data(struct goodix_ts_core *cd)
 			tx + rx, stat_result[1], stat_result[2],
 			stat_result[0]);
 		for (i = 0; i < tx + rx; i++) {
-			index += sprintf(&rbuf[index], "%d,",
+			index += sprintf(&rbuf[index], "%5d,",
 				ts_test->selfrawdata.data[i]);
 			if ((i + 1) % tx == 0)
 				index += sprintf(&rbuf[index], "\n");
@@ -1494,8 +1522,8 @@ static void goodix_save_data(struct goodix_ts_core *cd)
 			"<DataContent No.=\"%d\" DataCount=\"%d\" Maximum=\"%d\" Minimum=\"%d\" Average=\"%d\">\n",
 			i, tx + rx, stat_result[1], stat_result[2], stat_result[0]);
 			for (j = 0; j < tx + rx; j++) {
-				index += sprintf(&rbuf[index],
-					"%d,", ts_test->stylusraw[i].data[j]);
+				index += sprintf(&rbuf[index], "%5d,",
+					ts_test->stylusraw[i].data[j]);
 				if ((j + 1) % tx == 0)
 					index += sprintf(&rbuf[index], "\n");
 			}
@@ -1906,12 +1934,6 @@ static int goodix_open_test(struct goodix_ts_core *cd)
 	temp_cmd.cmd = 0x90;
 	temp_cmd.data[0] = 0x84;
 	temp_cmd.len = 5;
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
-		sync_addr = cd->ic_info.misc.touch_data_addr;
-		raw_addr = cd->ic_info.misc.mutual_rawdata_addr;
-		temp_cmd.cmd = 0x1;
-		temp_cmd.len = 4;
-	}
 	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
 	if (ret < 0) {
 		ts_err("send rawdata cmd failed");
@@ -1934,7 +1956,7 @@ static int goodix_open_test(struct goodix_ts_core *cd)
 	}
 
 	/* discard the first few frames */
-	for (i = 0; i < 3; i++) {
+	for (i = 0; i < DISCARD_FRAME_NUMS; i++) {
 		val = 0;
 		cd->hw_ops->write(cd, sync_addr, &val, 1);
 		usleep_range(20000, 21000);
@@ -2018,12 +2040,6 @@ static int goodix_self_open_test(struct goodix_ts_core *cd)
 	temp_cmd.cmd = 0x90;
 	temp_cmd.data[0] = 0x84;
 	temp_cmd.len = 5;
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
-		sync_addr = cd->ic_info.misc.touch_data_addr;
-		raw_addr = cd->ic_info.misc.self_rawdata_addr;
-		temp_cmd.cmd = 0x1;
-		temp_cmd.len = 4;
-	}
 	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
 	if (ret < 0) {
 		ts_err("send rawdata cmd failed");
@@ -2031,7 +2047,7 @@ static int goodix_self_open_test(struct goodix_ts_core *cd)
 	}
 
 	/* discard the first few frames */
-	for (j = 0; j < 3; j++) {
+	for (j = 0; j < DISCARD_FRAME_NUMS; j++) {
 		val = 0;
 		cd->hw_ops->write(cd, sync_addr, &val, 1);
 		usleep_range(20000, 21000);
@@ -2102,12 +2118,6 @@ static int goodix_noise_test(struct goodix_ts_core *cd)
 	temp_cmd.cmd = 0x90;
 	temp_cmd.data[0] = 0x82;
 	temp_cmd.len = 5;
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
-		sync_addr = cd->ic_info.misc.touch_data_addr;
-		raw_addr = cd->ic_info.misc.mutual_diffdata_addr;
-		temp_cmd.cmd = 0x1;
-		temp_cmd.len = 4;
-	}
 	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
 	if (ret < 0) {
 		ts_err("send rawdata cmd failed");
@@ -2115,7 +2125,7 @@ static int goodix_noise_test(struct goodix_ts_core *cd)
 	}
 
 	/* discard the first few frames */
-	for (i = 0; i < 3; i++) {
+	for (i = 0; i < DISCARD_FRAME_NUMS; i++) {
 		val = 0;
 		cd->hw_ops->write(cd, sync_addr, &val, 1);
 		usleep_range(20000, 21000);
@@ -2205,7 +2215,7 @@ static int goodix_stylus_rawdata_test(struct goodix_ts_core *cd)
 	}
 
 	/* discard the first few frames */
-	for (i = 0; i < 3; i++) {
+	for (i = 0; i < DISCARD_FRAME_NUMS; i++) {
 		val = 0;
 		cd->hw_ops->write(cd, sync_addr, &val, 1);
 		usleep_range(20000, 21000);
@@ -2365,7 +2375,7 @@ static int goodix_stylus_osc_test(struct goodix_ts_core *cd)
 	}
 
 exit:
-	cd->hw_ops->reset(cd, 100);
+	cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 	return ret;
 }
 
@@ -2392,7 +2402,7 @@ static int goodix_auto_test(struct goodix_ts_core *cd, bool is_brief)
 		for (i = 0; i < 3; i++) {
 			cd->hw_ops->send_cmd(cd, &temp_cmd);
 			ret = goodix_open_test(cd);
-			cd->hw_ops->reset(cd, 100);
+			cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 			if (ret != -EAGAIN)
 				break;
 		}
@@ -2402,7 +2412,7 @@ static int goodix_auto_test(struct goodix_ts_core *cd, bool is_brief)
 		for (i = 0; i < 3; i++) {
 			cd->hw_ops->send_cmd(cd, &temp_cmd);
 			ret = goodix_noise_test(cd);
-			cd->hw_ops->reset(cd, 100);
+			cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 			if (ret != -EAGAIN)
 				break;
 		}
@@ -2411,7 +2421,7 @@ static int goodix_auto_test(struct goodix_ts_core *cd, bool is_brief)
 	if (ts_test->item[GTP_SELFCAP_TEST]) {
 		for (i = 0; i < 3; i++) {
 			ret = goodix_self_open_test(cd);
-			cd->hw_ops->reset(cd, 100);
+			cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 			if (ret != -EAGAIN)
 				break;
 		}
@@ -2419,7 +2429,7 @@ static int goodix_auto_test(struct goodix_ts_core *cd, bool is_brief)
 
 	if (ts_test->item[GTP_SHORT_TEST]) {
 		goodix_shortcircut_test(cd);
-		cd->hw_ops->reset(cd, 100);
+		cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 	}
 
 	if (ts_test->item[GTP_STYLUS_RAW_TEST]) {
@@ -2427,7 +2437,7 @@ static int goodix_auto_test(struct goodix_ts_core *cd, bool is_brief)
 		if (ret < 0)
 			ts_err("enter test mode failed");
 		goodix_stylus_rawdata_test(cd);
-		cd->hw_ops->reset(cd, 100);
+		cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 	}
 
 	cd->hw_ops->irq_enable(cd, true);
@@ -2467,14 +2477,12 @@ static void goodix_auto_noise_test(struct goodix_ts_core *cd, u16 cnt, int thres
 restart:
 	temp_cmd.len = 0x07;
 	temp_cmd.cmd = 0x90;
-	temp_cmd.data[0] = 0x86;
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B)
+		temp_cmd.data[0] = 0x87;
+	else
+		temp_cmd.data[0] = 0x86;
 	temp_cmd.data[1] = cnt & 0xFF;
 	temp_cmd.data[2] = (cnt >> 8) & 0xFF;
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
-		temp_cmd.data[0] = 0x87;
-		sync_addr = cd->ic_info.misc.touch_data_addr;
-		raw_addr = cd->ic_info.misc.mutual_diffdata_addr;
-	}
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 
 	msleep(cnt * 8);
@@ -2535,7 +2543,7 @@ restart:
 		index += sprintf(&rbuf[index], "Result: PASS\n");
 
 exit:
-	cd->hw_ops->reset(cd, 100);
+	cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 	if (ret < 0 && --test_try > 0) {
 		ts_err("auto noise running failed, retry:%d", test_try);
 		ret = 0;
@@ -2553,7 +2561,7 @@ static int get_cap_data(struct goodix_ts_core *cd, uint8_t *type)
 	int tx = cd->ic_info.parm.drv_num;
 	int rx = cd->ic_info.parm.sen_num;
 	u8 val;
-	int retry = 20;
+	int retry = 40;
 	u8 *frame_buf;
 	u32 flag_addr = cd->ic_info.misc.frame_data_addr;
 	u32 mutual_addr;
@@ -2596,24 +2604,6 @@ static int get_cap_data(struct goodix_ts_core *cd, uint8_t *type)
 
 	temp_cmd.cmd = 0x90;
 	temp_cmd.len = 5;
-
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
-		flag_addr = cd->ic_info.misc.touch_data_addr;
-		if (strstr(type, CMD_GET_BASEDATA))
-			mutual_addr = cd->ic_info.misc.mutual_refdata_addr;
-		else if (strstr(type, CMD_GET_RAWDATA))
-			mutual_addr = cd->ic_info.misc.mutual_rawdata_addr;
-		else if (strstr(type, CMD_GET_DIFFDATA))
-			mutual_addr = cd->ic_info.misc.mutual_diffdata_addr;
-		else if (strstr(type, CMD_GET_SELF_BASEDATA))
-			self_addr = cd->ic_info.misc.self_refdata_addr;
-		else if (strstr(type, CMD_GET_SELF_RAWDATA))
-			self_addr = cd->ic_info.misc.self_rawdata_addr;
-		else if (strstr(type, CMD_GET_SELF_DIFFDATA))
-			self_addr = cd->ic_info.misc.self_diffdata_addr;
-		temp_cmd.cmd = 0x01;
-		temp_cmd.len = 4;
-	}
 
 	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
 	if (ret < 0) {
@@ -2688,10 +2678,6 @@ exit:
 	temp_cmd.cmd = 0x90;
 	temp_cmd.data[0] = 0;
 	temp_cmd.len = 5;
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
-		temp_cmd.cmd = 0x00;
-		temp_cmd.len = 4;
-	}
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 	/* clean touch event flag */
 	val = 0;
@@ -3142,10 +3128,6 @@ static void goodix_set_heatmap(struct goodix_ts_core *cd, int val)
 		temp_cmd.len = 5;
 		temp_cmd.cmd = 0xC9;
 		temp_cmd.data[0] = 0;
-		if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
-			temp_cmd.len = 4;
-			temp_cmd.cmd = 0x0;
-		}
 	} else {
 		index = sprintf(rbuf, "enable heatmap\n");
 /*
@@ -3156,10 +3138,6 @@ static void goodix_set_heatmap(struct goodix_ts_core *cd, int val)
 		temp_cmd.len = 5;
 		temp_cmd.cmd = 0xC9;
 		temp_cmd.data[0] = 1;
-		if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
-			temp_cmd.len = 4;
-			temp_cmd.cmd = 0x1;
-		}
 	}
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 	cd->hw_ops->irq_enable(cd, true);
@@ -3387,14 +3365,6 @@ exit:
 	goodix_ts_esd_on(cd);
 }
 
-static void goodix_brlb_get_freq(struct goodix_ts_core *cd)
-{
-	u8 val;
-
-	cd->hw_ops->read(cd, 0x10219 + 5, &val, 1);
-	index = sprintf(rbuf, "%s: %dHz\n", CMD_GET_TX_FREQ, val * 61 * 61);
-}
-
 static void goodix_force_update(struct goodix_ts_core *cd)
 {
 	int i;
@@ -3467,21 +3437,20 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 	//p[strlen(p) - 1] = 0; /* [GOOG] */
 
-	vfree(rbuf);
-	rbuf = NULL;
+	free_proc_buffer(&rbuf);
 	index = 0;
 	release_test_resource();
 
 	ts_info("input cmd[%s]", p);
 
 	if (!strncmp(p, CMD_FW_UPDATE, strlen(CMD_FW_UPDATE))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		goodix_force_update(cd);
 		goto exit;
 	}
 
 	if (!strncmp(p, CMD_GET_VERSION, strlen(CMD_GET_VERSION))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3496,7 +3465,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_RAWDATA, strlen(CMD_GET_RAWDATA))) {
-		rbuf = vzalloc(LARGE_SIZE);
+		rbuf = malloc_proc_buffer(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3509,7 +3478,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_BASEDATA, strlen(CMD_GET_BASEDATA))) {
-		rbuf = vzalloc(LARGE_SIZE);
+		rbuf = malloc_proc_buffer(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3522,7 +3491,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_DIFFDATA, strlen(CMD_GET_DIFFDATA))) {
-		rbuf = vzalloc(LARGE_SIZE);
+		rbuf = malloc_proc_buffer(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3535,7 +3504,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_SELF_RAWDATA, strlen(CMD_GET_SELF_RAWDATA))) {
-		rbuf = vzalloc(LARGE_SIZE);
+		rbuf = malloc_proc_buffer(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3548,7 +3517,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_SELF_DIFFDATA, strlen(CMD_GET_SELF_DIFFDATA))) {
-		rbuf = vzalloc(LARGE_SIZE);
+		rbuf = malloc_proc_buffer(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3562,7 +3531,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_SELF_BASEDATA, strlen(CMD_GET_SELF_BASEDATA))) {
-		rbuf = vzalloc(LARGE_SIZE);
+		rbuf = malloc_proc_buffer(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3576,7 +3545,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_DOUBLE_TAP, strlen(CMD_SET_DOUBLE_TAP))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3607,7 +3576,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_SINGLE_TAP, strlen(CMD_SET_SINGLE_TAP))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3638,7 +3607,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_LONG_PRESS, strlen(CMD_SET_LONG_PRESS))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3669,7 +3638,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_IRQ_ENABLE, strlen(CMD_SET_IRQ_ENABLE))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3698,7 +3667,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_ESD_ENABLE, strlen(CMD_SET_ESD_ENABLE))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3727,7 +3696,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_DEBUG_LOG, strlen(CMD_SET_DEBUG_LOG))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3758,7 +3727,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	if (!strncmp(p, CMD_AUTO_TEST, strlen(CMD_AUTO_TEST))) {
 		raw_data_cnt = 16;
 		noise_data_cnt = 1;
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3778,7 +3747,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_CHANNEL_NUM, strlen(CMD_GET_CHANNEL_NUM))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3789,18 +3758,14 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_TX_FREQ, strlen(CMD_GET_TX_FREQ))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
 		}
-		if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
-			goodix_brlb_get_freq(cd);
-		} else {
-			ret = get_cap_data(cd, CMD_GET_TX_FREQ);
-			if (ret < 0)
-				index = sprintf(rbuf, "%s: NG\n", CMD_GET_TX_FREQ);
-		}
+		ret = get_cap_data(cd, CMD_GET_TX_FREQ);
+		if (ret < 0)
+			index = sprintf(rbuf, "%s: NG\n", CMD_GET_TX_FREQ);
 		goto exit;
 	}
 
@@ -3812,7 +3777,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_SENSE_MODE, strlen(CMD_SET_SENSE_MODE))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3848,7 +3813,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 			goto exit;
 		}
 		noise_data_cnt = cmd_val;
-		rbuf = vzalloc(noise_data_cnt * 13000);
+		rbuf = malloc_proc_buffer(noise_data_cnt * 13000);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3882,7 +3847,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 			ts_err("%s: invalid cmd param", CMD_AUTO_NOISE_TEST);
 			goto exit;
 		}
-		rbuf = vzalloc(HUGE_SIZE);
+		rbuf = malloc_proc_buffer(HUGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3892,7 +3857,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_PACKAGE_ID, strlen(CMD_GET_PACKAGE_ID))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3910,7 +3875,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_MCU_ID, strlen(CMD_GET_MCU_ID))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3927,7 +3892,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_SCAN_MODE, strlen(CMD_SET_SCAN_MODE))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3953,7 +3918,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_SCAN_MODE, strlen(CMD_GET_SCAN_MODE))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3963,7 +3928,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_CONTINUE_MODE, strlen(CMD_SET_CONTINUE_MODE))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -3990,13 +3955,16 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 
 	/* open test */
 	if (!strncmp(p, CMD_OPEN_TEST, strlen(CMD_OPEN_TEST))) {
+		int tx = cd->ic_info.parm.drv_num;
+		int rx = cd->ic_info.parm.sen_num;
+
 		token = strsep(&p, ",");
 		if (!token || !p) {
 			ts_err("%s: invalid cmd param", CMD_OPEN_TEST);
 			goto exit;
 		}
 		token = strsep(&p, ",");
-		if (!token || !p) {
+		if (!token) {
 			ts_err("%s: invalid cmd param", CMD_OPEN_TEST);
 			goto exit;
 		}
@@ -4004,12 +3972,23 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 			ts_err("%s: invalid cmd param", CMD_OPEN_TEST);
 			goto exit;
 		}
-		if (kstrtos32(p, 10, &cmd_val2)) {
-			ts_err("%s: invalid cmd param", CMD_OPEN_TEST);
-			goto exit;
+		if (p != NULL) {
+			if (kstrtos32(p, 10, &cmd_val2)) {
+				ts_err("%s: invalid cmd param", CMD_OPEN_TEST);
+				goto exit;
+			}
+		} else {
+			cmd_val2 = 0;
 		}
 		raw_data_cnt = cmd_val;
-		rbuf = vzalloc(raw_data_cnt * 13000);
+		/*
+		 * [GOOG]
+		 * Change the size based on the channel number(tx * rx) for
+		 * output (raw + data) and markup text with format "%5d,".
+		 */
+		//rbuf = malloc_proc_buffer(raw_data_cnt * 13000);
+		rbuf = malloc_proc_buffer(raw_data_cnt * tx * rx * 6 * 3);
+		/*~[GOOG]*/
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4026,7 +4005,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SELF_OPEN_TEST, strlen(CMD_SELF_OPEN_TEST))) {
-		rbuf = vzalloc(HUGE_SIZE);
+		rbuf = malloc_proc_buffer(HUGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4042,7 +4021,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SHORT_TEST, strlen(CMD_SHORT_TEST))) {
-		rbuf = vzalloc(HUGE_SIZE);
+		rbuf = malloc_proc_buffer(HUGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4058,7 +4037,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_CONFIG, strlen(CMD_GET_CONFIG))) {
-		rbuf = vzalloc(LARGE_SIZE);
+		rbuf = malloc_proc_buffer(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4068,7 +4047,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_FW_STATUS, strlen(CMD_GET_FW_STATUS))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4079,7 +4058,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 
 	if (!strncmp(p, CMD_SET_HIGHSENSE_MODE,
 		    strlen(CMD_SET_HIGHSENSE_MODE))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4105,7 +4084,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_GRIP_DATA, strlen(CMD_SET_GRIP_DATA))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4126,7 +4105,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_GRIP_MODE, strlen(CMD_SET_GRIP_MODE))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4147,7 +4126,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_PALM_MODE, strlen(CMD_SET_PALM_MODE))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4168,7 +4147,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_NOISE_MODE, strlen(CMD_SET_NOISE_MODE))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4189,7 +4168,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_WATER_MODE, strlen(CMD_SET_WATER_MODE))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4210,7 +4189,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_ST_PARAM, strlen(CMD_SET_ST_PARAM))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4227,7 +4206,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_LP_PARAM, strlen(CMD_SET_LP_PARAM))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4244,7 +4223,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_HEATMAP, strlen(CMD_SET_HEATMAP))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4265,7 +4244,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_SELF_COMPEN, strlen(CMD_GET_SELF_COMPEN))) {
-		rbuf = vzalloc(LARGE_SIZE);
+		rbuf = malloc_proc_buffer(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4275,7 +4254,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_REPORT_RATE, strlen(CMD_SET_REPORT_RATE))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4296,7 +4275,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_DUMP_LOG, strlen(CMD_GET_DUMP_LOG))) {
-		rbuf = vzalloc(LARGE_SIZE);
+		rbuf = malloc_proc_buffer(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4306,7 +4285,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_STYLUS_DATA, strlen(CMD_GET_STYLUS_DATA))) {
-		rbuf = vzalloc(LARGE_SIZE);
+		rbuf = malloc_proc_buffer(LARGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4316,7 +4295,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_SET_FREQ_INDEX, strlen(CMD_SET_FREQ_INDEX))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		token = strsep(&p, ",");
 		if (!token || !p) {
 			index = sprintf(rbuf, "%s: invalid cmd param\n",
@@ -4333,7 +4312,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_DISABLE_FILTER, strlen(CMD_DISABLE_FILTER))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		token = strsep(&p, ",");
 		if (!token || !p) {
 			index = sprintf(rbuf, "%s: invalid cmd param\n",
@@ -4352,7 +4331,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	if (!strncmp(p, CMD_STYLUS_RAW_TEST, strlen(CMD_STYLUS_RAW_TEST))) {
 		cmd_val = 0;
 		raw_data_cnt = 16;
-		rbuf = vzalloc(HUGE_SIZE);
+		rbuf = malloc_proc_buffer(HUGE_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4377,7 +4356,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_STYLUS_OSC_TEST, strlen(CMD_STYLUS_OSC_TEST))) {
-		rbuf = vzalloc(SHORT_SIZE);
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4390,7 +4369,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 		goto exit;
 	}
 
-	rbuf = vzalloc(SHORT_SIZE);
+	rbuf = malloc_proc_buffer(SHORT_SIZE);
 	if (!rbuf) {
 		ts_err("failed to alloc rbuf");
 		goto exit;
@@ -4460,14 +4439,11 @@ int driver_test_selftest(struct goodix_ts_core *cd, char *buf)
 
 	release_test_resource();
 	index = 0;
-	if (rbuf != NULL) {
-		vfree(rbuf);
-		rbuf = NULL;
-	}
+	free_proc_buffer(&rbuf);
 
 	raw_data_cnt = 16;
 	noise_data_cnt = 1;
-	rbuf = vzalloc(SHORT_SIZE);
+	rbuf = malloc_proc_buffer(SHORT_SIZE);
 	if (rbuf == NULL) {
 		ts_err("failed to alloc rbuf");
 		ret = -ENOMEM;
