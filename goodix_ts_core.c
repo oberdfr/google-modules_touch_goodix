@@ -180,7 +180,7 @@ static ssize_t goodix_ts_reset_store(struct device *dev,
 	if (!buf || count <= 0)
 		return -EINVAL;
 	if (buf[0] != '0')
-		hw_ops->reset(core_data, GOODIX_NORMAL_RESET_DELAY_MS);
+		hw_ops->reset(core_data, goodix_get_normal_reset_delay(core_data));
 	return count;
 }
 
@@ -761,7 +761,7 @@ int ping(struct device *dev)
 int hardware_reset(struct device *dev)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
-	return cd->hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+	return cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 }
 
 int set_scan_mode(struct device *dev, enum scan_mode mode)
@@ -1041,7 +1041,7 @@ static int gti_reset(void *private_data, struct gti_reset_cmd *cmd)
 	struct goodix_ts_core *cd = private_data;
 
 	if (cmd->setting == GTI_RESET_MODE_HW || cmd->setting == GTI_RESET_MODE_AUTO)
-		return cd->hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+		return cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 	else
 		return -EOPNOTSUPP;
 }
@@ -1728,7 +1728,7 @@ static int goodix_ts_request_handle(
 	if (ts_event->request_code == REQUEST_TYPE_CONFIG)
 		ret = goodix_send_ic_config(cd, CONFIG_TYPE_NORMAL);
 	else if (ts_event->request_code == REQUEST_TYPE_RESET)
-		ret = hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+		ret = hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 	else if (ts_event->request_code == REQUEST_TYPE_UPDATE)
 		ret = goodix_do_fw_update(cd, UPDATE_MODE_FORCE | UPDATE_MODE_BLOCK |
 			UPDATE_MODE_SRC_REQUEST);
@@ -2479,7 +2479,7 @@ static void monitor_gesture_event(struct work_struct *work)
 
 	/* reset device or power on*/
 	if (cd->board_data.sleep_enable)
-		cd->hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+		cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 	else
 		goodix_ts_power_on(cd);
 }
@@ -2518,14 +2518,14 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
 	} else {
 		if (core_data->gesture_type) {
 			disable_irq_wake(core_data->irq);
-			hw_ops->reset(core_data, GOODIX_NORMAL_RESET_DELAY_MS);
+			hw_ops->reset(core_data, goodix_get_normal_reset_delay(core_data));
 		} else {
 			/* [GOOG]
 			 * Force to reset T-IC as touch resume process instead using brl_resume().
 			 */
 			/* reset device or power on*/
 			if (core_data->board_data.sleep_enable) {
-				hw_ops->reset(core_data, GOODIX_NORMAL_RESET_DELAY_MS);
+				hw_ops->reset(core_data, goodix_get_normal_reset_delay(core_data));
 				//hw_ops->resume(core_data); /* [GOOG] */
 			} else {
 				goodix_ts_power_on(core_data);

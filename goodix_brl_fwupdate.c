@@ -430,7 +430,7 @@ static int goodix_load_isp(struct goodix_ts_core *cd, struct firmware_data *fw_d
 	}
 	ts_info("Success write [8]0x55 to 0x%x", HW_REG_CPU_RUN_FROM);
 
-	cd->hw_ops->reset(cd, 100);
+	cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 	/*check isp state */
 	if (cd->hw_ops->read_version(cd, &isp_fw_version)) {
 		ts_err("failed read isp version");
@@ -782,7 +782,7 @@ static int goodix_update_finish(struct fw_update_ctrl *fwu_ctrl)
 	int ret;
 
 	/* step 1: reset IC */
-	cd->hw_ops->reset(cd, 100);
+	cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 	/* step 2: read version */
 	ret = cd->hw_ops->read_version(cd, &cd->fw_version);
 	if (ret < 0) {
