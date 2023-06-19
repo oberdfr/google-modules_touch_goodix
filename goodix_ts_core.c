@@ -1864,20 +1864,47 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 			core_data->coords_timestamp = core_data->isr_timestamp;
 			goodix_ts_report_pen(core_data, &ts_event->pen_data);
 		}
+		/* [GOOG]
+		 * Move to goodix_ts_post_threadirq_func.
 		if (ts_event->event_type & EVENT_REQUEST)
 			goodix_ts_request_handle(core_data, ts_event);
 		if (ts_event->event_type & EVENT_STATUS)
 			goodix_ts_report_status(core_data, ts_event);
+		 */
+		/* [GOOG]
+		 * Don't need to report gesture events in our use cases.
 		if (ts_event->event_type & EVENT_GESTURE)
 			goodix_ts_report_gesture(core_data, ts_event);
-
-		/* read done */
-		hw_ops->after_event_handler(core_data); /* [GOOG] */
+		 */
 	}
+
 /* [GOOG]
  * Remove the control to enable/disable the interrupt for bottom-half.
 	enable_irq(core_data->irq);
  */
+
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t goodix_ts_post_threadirq_func(int irq, void *data)
+{
+	struct goodix_ts_core *core_data = data;
+	struct goodix_ts_hw_ops *hw_ops = core_data->hw_ops;
+	struct goodix_ts_event *ts_event = &core_data->ts_event;
+
+	if (ts_event->event_type != EVENT_INVALID) {
+		if (ts_event->event_type & EVENT_REQUEST)
+			goodix_ts_request_handle(core_data, ts_event);
+
+		if (ts_event->event_type & EVENT_STATUS) {
+			hw_ops->read(core_data, 0x1021C, (u8 *)&ts_event->status_data,
+				sizeof(ts_event->status_data));
+			goodix_ts_report_status(core_data, ts_event);
+		}
+
+		/* read done */
+		hw_ops->after_event_handler(core_data); /* [GOOG] */
+	}
 
 	return IRQ_HANDLED;
 }
@@ -2680,6 +2707,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	options->selftest = gti_selftest;
 	options->get_context_driver = gti_get_context_driver;
 	options->set_report_rate = gti_set_report_rate;
+	options->post_irq_thread_fn = goodix_ts_post_threadirq_func;
 
 	cd->gti = goog_touch_interface_probe(
 		cd, cd->bus->dev, cd->input_dev, gti_default_handler, options);
