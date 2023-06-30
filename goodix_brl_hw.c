@@ -1259,9 +1259,9 @@ static int brl_event_handler(struct goodix_ts_core *cd,
 		struct goodix_ts_gesture_event_data *gesture =
 			(struct goodix_ts_gesture_event_data *)event_data;
 		ts_event->event_type |= EVENT_GESTURE;
-		ts_event->gesture_data.gesture_type = gesture->gesture_type;
-		ts_event->gesture_data.touches = gesture->touches;
-		memcpy(ts_event->gesture_data.data, gesture->data,
+		ts_event->temp_gesture_data.event_type = gesture->event_type;
+		ts_event->temp_gesture_data.touches = gesture->touches;
+		memcpy(ts_event->temp_gesture_data.data, gesture->data,
 			GOODIX_GESTURE_DATA_LEN);
 	}
 

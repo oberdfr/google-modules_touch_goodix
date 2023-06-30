@@ -550,7 +550,7 @@ struct goodix_touch_data {
 
 /* gesture event data */
 struct goodix_gesture_data {
-	u8 gesture_type;
+	u8 event_type;
 	int touches;
 	u8 data[GOODIX_GESTURE_DATA_LEN];
 };
@@ -611,7 +611,7 @@ struct goodix_ts_event {
 	u8 fp_flag;	 /* finger print DOWN flag */
 	u8 request_code; /* represent the request type */
 	u8 request_data[GOODIX_REQUEST_DATA_LEN];
-	struct goodix_gesture_data gesture_data;
+	struct goodix_gesture_data temp_gesture_data;
 	struct goodix_touch_data touch_data;
 	struct goodix_pen_data pen_data;
 	struct goodix_status_data status_data;
@@ -682,7 +682,7 @@ struct goodix_ts_gesture_event_data {
 	u8 edge_flag : 1;
 	u8 reset_int : 1;
 	u8 touches;
-	u8 gesture_type;
+	u8 event_type;
 	u8 reserved4;
 	u16 checksum;
 	u8 data[GOODIX_GESTURE_DATA_LEN];
@@ -857,7 +857,15 @@ struct goodix_ts_core {
 	struct input_dev *pen_dev;
 	struct mutex cmd_lock;
 	/* TODO counld we remove this from core data? */
+	/*
+	 * [GOOG]
+	 * The ts_event will be cleared and updated in irq_handler.
+	 * Don't use it outside the irq_handler. This will cause a
+	 * data racing issue. Please make a copy of it with mutex.
+	 */
 	struct goodix_ts_event ts_event;
+	struct mutex gesture_data_lock;
+	struct goodix_gesture_data gesture_data;
 	struct goodix_ble_data ble_data;
 	u32 pen_pressure;
 
@@ -1002,7 +1010,7 @@ int driver_test_selftest(struct goodix_ts_core *cd, char *buf);
 int driver_test_proc_init(struct goodix_ts_core *core_data);
 void driver_test_proc_remove(struct goodix_ts_core *core_data);
 int goodix_do_inspect(struct goodix_ts_core *cd, struct ts_rawdata_info *info);
-int goodix_ts_report_gesture(struct goodix_ts_core *cd, struct goodix_ts_event *event);
+int goodix_ts_report_gesture(struct goodix_ts_core *cd);
 void goodix_ts_report_status(struct goodix_ts_core *core_data,
 	struct goodix_ts_event *ts_event);
 
