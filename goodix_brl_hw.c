@@ -242,7 +242,7 @@ static int brl_power_on(struct goodix_ts_core *cd, bool on)
 		if (ret < 0)
 			goto power_off;
 
-		msleep(GOODIX_NORMAL_RESET_DELAY_MS);
+		msleep(goodix_get_normal_reset_delay(cd));
 		return 0;
 	}
 
@@ -263,24 +263,16 @@ int brl_suspend(struct goodix_ts_core *cd)
 {
 	u32 cmd_reg = cd->ic_info.misc.cmd_addr;
 	u8 sleep_cmd[] = { 0x00, 0x00, 0x05, 0xC4, 0x01, 0xCA, 0x00 };
-	u8 sleep_cmd_brlb[] = { 0x00, 0x00, 0x05, 0xCA, 0x01, 0xD0, 0x00 };
-	int ret; /* [GOOG] */
 
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_B)
-		ret = cd->hw_ops->write(cd, cmd_reg, sleep_cmd_brlb, sizeof(sleep_cmd_brlb));
-	else
-		ret = cd->hw_ops->write(cd, cmd_reg, sleep_cmd, sizeof(sleep_cmd));
-	return ret;
+	return cd->hw_ops->write(cd, cmd_reg, sleep_cmd, sizeof(sleep_cmd));
 }
 
 int brl_resume(struct goodix_ts_core *cd)
 {
 	u32 cmd_reg = cd->ic_info.misc.cmd_addr;
 	u8 cmd_buf[] = { 0x00, 0x00, 0x04, 0xA7, 0xAB, 0x00 };
-	int ret; /* [GOOG] */
 
-	ret = cd->hw_ops->write(cd, cmd_reg, cmd_buf, sizeof(cmd_buf));
-	return ret;
+	return cd->hw_ops->write(cd, cmd_reg, cmd_buf, sizeof(cmd_buf));
 }
 
 #define GOODIX_GESTURE_CMD_BA 0x12
@@ -895,6 +887,7 @@ void print_ic_info(struct goodix_ic_info *ic_info)
 		misc->fw_buffer_addr, misc->fw_buffer_max_len);
 	ts_info("Touch-Data:                    0x%04X, %d",
 		misc->touch_data_addr, misc->touch_data_head_len);
+	ts_info("frame_data_addr:               0x%04X", misc->frame_data_addr);
 	ts_info("point_struct_len:              %d", misc->point_struct_len);
 	ts_info("mutual_rawdata_addr:           0x%04X",
 		misc->mutual_rawdata_addr);
@@ -1259,9 +1252,9 @@ static int brl_event_handler(struct goodix_ts_core *cd,
 		struct goodix_ts_gesture_event_data *gesture =
 			(struct goodix_ts_gesture_event_data *)event_data;
 		ts_event->event_type |= EVENT_GESTURE;
-		ts_event->gesture_data.gesture_type = gesture->gesture_type;
-		ts_event->gesture_data.touches = gesture->touches;
-		memcpy(ts_event->gesture_data.data, gesture->data,
+		ts_event->temp_gesture_data.event_type = gesture->event_type;
+		ts_event->temp_gesture_data.touches = gesture->touches;
+		memcpy(ts_event->temp_gesture_data.data, gesture->data,
 			GOODIX_GESTURE_DATA_LEN);
 	}
 
@@ -1686,15 +1679,9 @@ int brl_get_mutual_data(struct goodix_ts_core *cd, enum frame_data_type type)
 	struct goodix_ts_cmd cmd = { 0 };
 
 	mutual_addr = cd->hw_ops->get_ms_data_addr(cd, type);
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
-		flag_addr = cd->ic_info.misc.touch_data_addr;
-		cmd.cmd = 0x01;
-		cmd.len = 4;
-	} else {
-		cmd.cmd = GOODIX_CMD_SET_FRAMEDATA_ENABLED;
-		cmd.len = 5;
-		cmd.data[0] = type;
-	}
+	cmd.cmd = GOODIX_CMD_SET_FRAMEDATA_ENABLED;
+	cmd.len = 5;
+	cmd.data[0] = type;
 	ret = cd->hw_ops->send_cmd(cd, &cmd);
 	if (ret < 0) {
 		ts_err("report rawdata failed, exit!");
@@ -1754,15 +1741,9 @@ int brl_get_self_sensing_data(struct goodix_ts_core *cd, enum frame_data_type ty
 	struct goodix_ts_cmd cmd = { 0 };
 
 	self_addr = cd->hw_ops->get_ss_data_addr(cd, type);
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
-		flag_addr = cd->ic_info.misc.touch_data_addr;
-		cmd.cmd = 0x01;
-		cmd.len = 4;
-	} else {
-		cmd.cmd = GOODIX_CMD_SET_FRAMEDATA_ENABLED;
-		cmd.len = 5;
-		cmd.data[0] = type;
-	}
+	cmd.cmd = GOODIX_CMD_SET_FRAMEDATA_ENABLED;
+	cmd.len = 5;
+	cmd.data[0] = type;
 	ret = cd->hw_ops->send_cmd(cd, &cmd);
 	if (ret < 0) {
 		ts_err("report rawdata failed, exit!");
@@ -1985,21 +1966,6 @@ static u32 brl_get_ms_data_addr(struct goodix_ts_core *cd, enum frame_data_type 
 			cd->ic_info.misc.fw_attr_len +
 			cd->ic_info.misc.fw_log_len + 8;
 
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
-		switch (type) {
-		case FRAME_DATA_TYPE_RAW:
-			addr = cd->ic_info.misc.mutual_rawdata_addr;
-			break;
-		case FRAME_DATA_TYPE_BASE:
-			addr = cd->ic_info.misc.mutual_refdata_addr;
-			break;
-		case FRAME_DATA_TYPE_DIFF:
-		default:
-			addr = cd->ic_info.misc.mutual_diffdata_addr;
-			break;
-		}
-	}
-
 	return addr;
 }
 
@@ -2009,21 +1975,6 @@ static u32 brl_get_ss_data_addr(struct goodix_ts_core *cd, enum frame_data_type 
 			cd->ic_info.misc.frame_data_head_len +
 			cd->ic_info.misc.fw_attr_len + cd->ic_info.misc.fw_log_len +
 			cd->ic_info.misc.mutual_struct_len + 10;
-
-	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
-		switch (type) {
-		case FRAME_DATA_TYPE_RAW:
-			addr = cd->ic_info.misc.self_rawdata_addr;
-			break;
-		case FRAME_DATA_TYPE_BASE:
-			addr = cd->ic_info.misc.self_refdata_addr;
-			break;
-		case FRAME_DATA_TYPE_DIFF:
-		default:
-			addr = cd->ic_info.misc.self_diffdata_addr;
-			break;
-		}
-	}
 
 	return addr;
 }

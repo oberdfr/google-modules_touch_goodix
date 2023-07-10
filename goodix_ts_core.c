@@ -180,7 +180,7 @@ static ssize_t goodix_ts_reset_store(struct device *dev,
 	if (!buf || count <= 0)
 		return -EINVAL;
 	if (buf[0] != '0')
-		hw_ops->reset(core_data, GOODIX_NORMAL_RESET_DELAY_MS);
+		hw_ops->reset(core_data, goodix_get_normal_reset_delay(core_data));
 	return count;
 }
 
@@ -761,7 +761,7 @@ int ping(struct device *dev)
 int hardware_reset(struct device *dev)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
-	return cd->hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+	return cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 }
 
 int set_scan_mode(struct device *dev, enum scan_mode mode)
@@ -1041,7 +1041,7 @@ static int gti_reset(void *private_data, struct gti_reset_cmd *cmd)
 	struct goodix_ts_core *cd = private_data;
 
 	if (cmd->setting == GTI_RESET_MODE_HW || cmd->setting == GTI_RESET_MODE_AUTO)
-		return cd->hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+		return cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 	else
 		return -EOPNOTSUPP;
 }
@@ -1728,7 +1728,7 @@ static int goodix_ts_request_handle(
 	if (ts_event->request_code == REQUEST_TYPE_CONFIG)
 		ret = goodix_send_ic_config(cd, CONFIG_TYPE_NORMAL);
 	else if (ts_event->request_code == REQUEST_TYPE_RESET)
-		ret = hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+		ret = hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 	else if (ts_event->request_code == REQUEST_TYPE_UPDATE)
 		ret = goodix_do_fw_update(cd, UPDATE_MODE_FORCE | UPDATE_MODE_BLOCK |
 			UPDATE_MODE_SRC_REQUEST);
@@ -1858,6 +1858,10 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 		}
 		if (ts_event->event_type & EVENT_GESTURE) {
 			core_data->coords_timestamp = core_data->isr_timestamp;
+			mutex_lock(&core_data->gesture_data_lock);
+			memcpy(&core_data->gesture_data, &core_data->ts_event.temp_gesture_data,
+				sizeof(core_data->gesture_data));
+			mutex_unlock(&core_data->gesture_data_lock);
 		}
 		if (core_data->board_data.pen_enable &&
 			ts_event->event_type & EVENT_PEN) {
@@ -2458,28 +2462,34 @@ static void monitor_gesture_event(struct work_struct *work)
 		work, struct delayed_work, work);
 	struct goodix_ts_core *cd = container_of(delayed_work, struct goodix_ts_core,
 		monitor_gesture_work);
-	struct goodix_gesture_data* gesture_data = &cd->ts_event.gesture_data;
-	unsigned char gesture_type = gesture_data->gesture_type;
+	struct goodix_gesture_data* gesture_data = &cd->gesture_data;
+	unsigned char event_type = GOODIX_GESTURE_UNKNOWN;
 	ktime_t now = ktime_get();
-	bool timeout = gesture_type == GOODIX_GESTURE_FOD_DOWN ?
+	bool timeout = false;
+
+	mutex_lock(&cd->gesture_data_lock);
+	event_type = gesture_data->event_type;
+	mutex_unlock(&cd->gesture_data_lock);
+
+	timeout = event_type == GOODIX_GESTURE_FOD_DOWN ?
 		now >= cd->gesture_up_timeout : now >= cd->gesture_down_timeout;
 
-	if (gesture_type != GOODIX_GESTURE_FOD_UP && !timeout) {
+	if (event_type != GOODIX_GESTURE_FOD_UP && !timeout) {
 		queue_delayed_work(cd->event_wq, &cd->monitor_gesture_work,
 			msecs_to_jiffies(5));
 		return;
 	}
 
-	if (gesture_type == GOODIX_GESTURE_FOD_UP ||
-		gesture_type == GOODIX_GESTURE_UNKNOWN) {
-		if (gesture_type == GOODIX_GESTURE_UNKNOWN)
+	if (event_type == GOODIX_GESTURE_FOD_UP ||
+		event_type == GOODIX_GESTURE_UNKNOWN) {
+		if (event_type == GOODIX_GESTURE_UNKNOWN)
 			cd->coords_timestamp = now;
 		goodix_ts_report_gesture_up(cd);
 	}
 
 	/* reset device or power on*/
 	if (cd->board_data.sleep_enable)
-		cd->hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+		cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 	else
 		goodix_ts_power_on(cd);
 }
@@ -2507,10 +2517,9 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
 
 	/* [GOOG] */
 	if (check_gesture_mode(core_data)) {
-		struct goodix_gesture_data *gesture_data =
-			&core_data->ts_event.gesture_data;
+		struct goodix_gesture_data *gesture_data = &core_data->gesture_data;
 
-		gesture_data->gesture_type = GOODIX_GESTURE_UNKNOWN;
+		gesture_data->event_type = GOODIX_GESTURE_UNKNOWN;
 		core_data->gesture_down_timeout = ktime_add_ms(ktime_get(), 100);
 		core_data->gesture_up_timeout = ktime_add_ms(ktime_get(), 200);
 		queue_delayed_work(core_data->event_wq, &core_data->monitor_gesture_work,
@@ -2518,14 +2527,14 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
 	} else {
 		if (core_data->gesture_type) {
 			disable_irq_wake(core_data->irq);
-			hw_ops->reset(core_data, GOODIX_NORMAL_RESET_DELAY_MS);
+			hw_ops->reset(core_data, goodix_get_normal_reset_delay(core_data));
 		} else {
 			/* [GOOG]
 			 * Force to reset T-IC as touch resume process instead using brl_resume().
 			 */
 			/* reset device or power on*/
 			if (core_data->board_data.sleep_enable) {
-				hw_ops->reset(core_data, GOODIX_NORMAL_RESET_DELAY_MS);
+				hw_ops->reset(core_data, goodix_get_normal_reset_delay(core_data));
 				//hw_ops->resume(core_data); /* [GOOG] */
 			} else {
 				goodix_ts_power_on(core_data);
@@ -3011,6 +3020,7 @@ static int goodix_ts_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 	mutex_init(&core_data->cmd_lock);
+	mutex_init(&core_data->gesture_data_lock);
 
 	/* touch core layer is a platform driver */
 	core_data->pdev = pdev;
@@ -3078,6 +3088,7 @@ err_init_tools:
 err_setup_gpio:
 	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
 err_out:
+	mutex_destroy(&core_data->gesture_data_lock);
 	mutex_destroy(&core_data->cmd_lock);
 	core_data->init_stage = CORE_INIT_FAIL;
 	ts_err("goodix_ts_core failed, ret:%d", ret);
@@ -3128,6 +3139,7 @@ static int goodix_ts_remove(struct platform_device *pdev)
 	goodix_ts_power_off(core_data);
 /*~[GOOG] */
 	goodix_set_pinctrl_state(core_data, PINCTRL_MODE_SUSPEND);
+	mutex_destroy(&core_data->gesture_data_lock);
 	mutex_destroy(&core_data->cmd_lock);
 
 	return 0;
