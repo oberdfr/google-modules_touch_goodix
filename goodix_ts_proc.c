@@ -53,6 +53,7 @@
 #define CMD_GET_STYLUS_DATA "get_stylus_data"
 #define CMD_SET_FREQ_INDEX "set_freq_index"
 #define CMD_DISABLE_FILTER "disable_filter"
+#define CMD_GET_IM_DATA "get_im_data"
 
 const static char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_STYLUS_RAW_TEST, CMD_STYLUS_OSC_TEST,
@@ -69,7 +70,7 @@ const static char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_SET_GRIP_MODE, CMD_SET_PALM_MODE, CMD_SET_NOISE_MODE,
 	CMD_SET_WATER_MODE, CMD_SET_HEATMAP, CMD_GET_SELF_COMPEN,
 	CMD_SET_REPORT_RATE, CMD_GET_DUMP_LOG, CMD_GET_STYLUS_DATA,
-	CMD_SET_FREQ_INDEX, CMD_DISABLE_FILTER, NULL };
+	CMD_SET_FREQ_INDEX, CMD_DISABLE_FILTER, CMD_GET_IM_DATA, NULL };
 
 /* test limits keyword */
 #define CSV_TP_SPECIAL_RAW_MIN "special_raw_min"
@@ -2812,16 +2813,8 @@ exit:
 
 static void goodix_get_fw_status(struct goodix_ts_core *cd)
 {
-	u32 status_addr;
-	u32 noise_lv_addr;
-	u32 offset;
+	struct goodix_status_data status_data;
 	u8 val;
-
-	offset = cd->ic_info.misc.frame_data_addr +
-		 cd->ic_info.misc.frame_data_head_len +
-		 cd->ic_info.misc.fw_attr_len;
-	status_addr = offset + 38;
-	noise_lv_addr = offset + 65;
 
 	cd->hw_ops->read(cd, 0x1021A, &val, 1);
 	index += sprintf(
@@ -2837,24 +2830,10 @@ static void goodix_get_fw_status(struct goodix_ts_core *cd)
 	index += sprintf(
 		&rbuf[index], "set_heatmap_mode[%d]\n", (val >> 0) & 0x01);
 
-	cd->hw_ops->read(cd, status_addr, &val, 1);
-	ts_info("addr:0x%04x fw_status:0x%02X", status_addr, val);
-	index += sprintf(
-		&rbuf[index], "touch[%d] ", (val & (0x01 << 0)) ? 1 : 0);
-	index +=
-		sprintf(&rbuf[index], "game[%d] ", (val & (0x01 << 1)) ? 1 : 0);
-	index +=
-		sprintf(&rbuf[index], "palm[%d] ", (val & (0x01 << 2)) ? 1 : 0);
-	index += sprintf(
-		&rbuf[index], "water[%d] ", (val & (0x01 << 3)) ? 1 : 0);
-	index += sprintf(
-		&rbuf[index], "charge[%d] ", (val & (0x01 << 4)) ? 1 : 0);
-	index += sprintf(
-		&rbuf[index], "lowtemp[%d] ", (val & (0x01 << 5)) ? 1 : 0);
-
-	cd->hw_ops->read(cd, noise_lv_addr, &val, 1);
-	ts_info("noise level addr: 0x%04x", noise_lv_addr);
-	index += sprintf(&rbuf[index], "noise-lv[%d]\n", val);
+	cd->hw_ops->read(cd, 0x1021C, (u8 *)&status_data, sizeof(status_data));
+	index += sprintf(&rbuf[index], "water[%d] ", status_data.water_sta);
+	index += sprintf(&rbuf[index], "palm[%d] ", status_data.palm_sta);
+	index += sprintf(&rbuf[index], "noise_lv[%d]\n", status_data.noise_lv);
 }
 
 static void goodix_set_highsense_mode(struct goodix_ts_core *cd, u8 val)
@@ -3146,7 +3125,6 @@ static void goodix_set_heatmap(struct goodix_ts_core *cd, int val)
 static void goodix_get_self_compensation(struct goodix_ts_core *cd)
 {
 	u8 *cfg;
-	u8 *cfg_buf;
 	int len;
 	int cfg_num;
 	int sub_cfg_index;
@@ -3156,19 +3134,35 @@ static void goodix_get_self_compensation(struct goodix_ts_core *cd)
 	s16 val;
 	int i, j;
 
-	cfg_buf = kzalloc(GOODIX_CFG_MAX_SIZE, GFP_KERNEL);
-	if (cfg_buf == NULL) {
+	cfg = kzalloc(GOODIX_CFG_MAX_SIZE, GFP_KERNEL);
+	if (cfg == NULL) {
 		ts_err("failed to alloc cfg buffer");
 		return;
 	}
 
-	len = cd->hw_ops->read_config(cd, cfg_buf, GOODIX_CFG_MAX_SIZE);
-	if (len < 0) {
-		ts_err("read config failed");
-		goto exit;
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+		cd->hw_ops->read(cd, cd->ic_info.misc.auto_scan_cmd_addr, cfg,
+			(tx + rx) * 2);
+		index += sprintf(&rbuf[index], "Tx:");
+		for (i = 0; i < tx; i++) {
+			val = le16_to_cpup((__le16 *)&cfg[i * 2]);
+			index += sprintf(&rbuf[index], "%d,", val);
+		}
+		index += sprintf(&rbuf[index], "\nRx:");
+		for (i = 0; i < rx; i++) {
+			val = le16_to_cpup((__le16 *)&cfg[tx * 2 + i * 2]);
+			index += sprintf(&rbuf[index], "%d,", val);
+		}
+		index += sprintf(&rbuf[index], "\n");
+		goto exit_free;
 	}
 
-	cfg = cfg_buf;
+	len = cd->hw_ops->read_config(cd, cfg, GOODIX_CFG_MAX_SIZE);
+	if (len < 0) {
+		ts_err("read config failed");
+		goto exit_free;
+	}
+
 	cfg_num = cfg[61];
 	cfg += 64;
 	for (i = 0; i < cfg_num; i++) {
@@ -3194,8 +3188,8 @@ static void goodix_get_self_compensation(struct goodix_ts_core *cd)
 		}
 		cfg += (sub_cfg_len + 2);
 	}
-exit:
-	kfree(cfg_buf);
+exit_free:
+	kfree(cfg);
 }
 
 static void goodix_set_report_rate(struct goodix_ts_core *cd, int rate)
@@ -3360,6 +3354,67 @@ static void goodix_get_stylus_data(struct goodix_ts_core *cd)
 		stylus_data.stylus_noise_value[3]);
 
 exit:
+	/* enable irq & esd */
+	cd->hw_ops->irq_enable(cd, true);
+	goodix_ts_esd_on(cd);
+}
+
+static void goodix_get_im_rawdata(struct goodix_ts_core *cd)
+{
+	u32 im_addr = cd->ic_info.misc.frame_data_addr +
+		      cd->ic_info.misc.frame_data_head_len +
+		      cd->ic_info.misc.fw_attr_len +
+		      cd->ic_info.misc.fw_log_len +
+		      cd->ic_info.misc.mutual_struct_len +
+		      cd->ic_info.misc.self_struct_len + 32;
+	int freq_num = cd->ic_info.parm.mutual_freq_num;
+	int rx = cd->ic_info.parm.sen_num;
+	s16 data[MAX_SCAN_FREQ_NUM * MAX_SEN_NUM_BRB];
+	int i, j;
+	int cnt = 0;
+	struct goodix_ts_cmd temp_cmd;
+	u32 flag_addr = cd->ic_info.misc.frame_data_addr;
+	u8 val;
+	int retry = 20;
+
+	/* disable irq & close esd */
+	cd->hw_ops->irq_enable(cd, false);
+	goodix_ts_esd_off(cd);
+
+	temp_cmd.cmd = 0x90;
+	temp_cmd.data[0] = 0x81;
+	temp_cmd.len = 5;
+	cd->hw_ops->send_cmd(cd, &temp_cmd);
+
+	/* clean touch event flag */
+	val = 0;
+	cd->hw_ops->write(cd, flag_addr, &val, 1);
+	while (retry--) {
+		usleep_range(2000, 2100);
+		cd->hw_ops->read(cd, flag_addr, &val, 1);
+		if (val & 0x80)
+			break;
+	}
+	if (retry < 0) {
+		ts_err("framedata is not ready val:0x%02x, exit!", val);
+		goto exit;
+	}
+
+	cd->hw_ops->read(cd, im_addr, (u8 *)data, freq_num * rx * 2);
+	for (i = 0; i < freq_num; i++) {
+		index += sprintf(&rbuf[index], "freq%d: ", i);
+		for (j = 0; j < rx; j++)
+			index += sprintf(&rbuf[index], "%d,", data[cnt++]);
+		index += sprintf(&rbuf[index], "\n");
+	}
+
+exit:
+	temp_cmd.cmd = 0x90;
+	temp_cmd.data[0] = 0;
+	temp_cmd.len = 5;
+	cd->hw_ops->send_cmd(cd, &temp_cmd);
+	val = 0;
+	cd->hw_ops->write(cd, flag_addr, &val, 1);
 	/* enable irq & esd */
 	cd->hw_ops->irq_enable(cd, true);
 	goodix_ts_esd_on(cd);
@@ -4366,6 +4421,12 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 			index = sprintf(rbuf, "stylus osc test:\nFAIL\n");
 		else
 			index = sprintf(rbuf, "stylus osc test:\nPASS\n");
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_GET_IM_DATA, strlen(CMD_GET_IM_DATA))) {
+		rbuf = malloc_proc_buffer(LARGE_SIZE);
+		goodix_get_im_rawdata(cd);
 		goto exit;
 	}
 

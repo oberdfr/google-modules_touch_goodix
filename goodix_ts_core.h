@@ -57,7 +57,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.2.10"
+#define GOODIX_DRIVER_VERSION "v1.2.11"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -823,13 +823,13 @@ struct fw_update_ctrl {
 	struct mutex mutex;
 	int initialized;
 	char fw_name[GOODIX_MAX_STR_LABEL_LEN];
+	u32 cfg_id;
 	int mode;
 	enum update_status status;
 	int spend_time;
 
 	struct firmware_data fw_data;
 	struct goodix_ic_config *ic_config;
-	struct goodix_ic_config one_binary_cfg;
 	struct goodix_ts_core *core_data;
 	struct update_info_t *update_info;
 	struct kobject *kobj;
