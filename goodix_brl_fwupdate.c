@@ -183,9 +183,14 @@ static int goodix_parse_firmware(struct goodix_ts_core *cd,
 	int subsys_info_offset =
 		cd->update_ctrl.update_info->subsys_info_offset;
 	int header_size = cd->update_ctrl.update_info->header_size;
-	struct goodix_ic_config *one_binary_cfg = &cd->update_ctrl.one_binary_cfg;
 	int r = 0;
+	u32 cfg_flash_addr;
 
+	cd->update_ctrl.cfg_id = 0;
+	if (cd->bus->ic_type == IC_TYPE_BERLIN_B)
+		cfg_flash_addr = CONFIG_DATA_ADDR_BRB;
+	else
+		cfg_flash_addr = CONFIG_DATA_ADDR_BRD;
 	fw_summary = &fw_data->fw_summary;
 
 	/* copy firmware head info */
@@ -265,12 +270,21 @@ static int goodix_parse_firmware(struct goodix_ts_core *cd,
 			fw_summary->subsys[i].flash_addr);
 		ts_debug("Subsystem Ptr: %p", fw_summary->subsys[i].data);
 
-		if (fw_summary->subsys[i].type == CONFIG_DATA_TYPE) {
-			one_binary_cfg->len = fw_summary->subsys[i].size;
-			memcpy(one_binary_cfg->data, fw_summary->subsys[i].data,
-				one_binary_cfg->len);
-			cd->update_ctrl.ic_config = one_binary_cfg;
+		if (cd->board_data.use_one_binary) {
+			if (fw_summary->subsys[i].flash_addr ==
+				cfg_flash_addr) {
+				cd->update_ctrl.cfg_id = le32_to_cpup(
+					(__le32 *)&fw_summary->subsys[i]
+						.data[30]);
+				ts_info("Firmware config id:0x%x",
+					cd->update_ctrl.cfg_id);
+			}
 		}
+	}
+
+	if (cd->board_data.use_one_binary && cd->update_ctrl.cfg_id == 0) {
+		ts_err("use one binary but not find subsys cfg");
+		return -EINVAL;
 	}
 
 	if (fw_summary->chip_type == CHIP_TYPE_BRA &&
@@ -337,6 +351,13 @@ static int goodix_fw_version_compare(struct fw_update_ctrl *fwu_ctrl)
 		if (ic_info->version.config_id != file_cfg_id) {
 			ts_info("ic_cfg_id:0x%x != file_cfg_id:0x%x", ic_info->version.config_id,
 				file_cfg_id);
+			return COMPARE_CFG_NOTEQUAL;
+		}
+		ts_info("config_id equal");
+	} else if (cd->board_data.use_one_binary) {
+		if (ic_info->version.config_id != fwu_ctrl->cfg_id) {
+			ts_info("ic_cfg_id:0x%x != file_cfg_id:0x%x",
+				ic_info->version.config_id, fwu_ctrl->cfg_id);
 			return COMPARE_CFG_NOTEQUAL;
 		}
 		ts_info("config_id equal");
