@@ -143,20 +143,29 @@ const static struct attribute_group gesture_sysfs_group = {
 	.attrs = gesture_attrs,
 };
 
-int goodix_ts_report_gesture(struct goodix_ts_core *cd, struct goodix_ts_event *event)
+/* [GOOG]
+ * Use cd->gesture_data to avoid data racing issue.
+ */
+int goodix_ts_report_gesture(struct goodix_ts_core *cd)
 {
 	int coor_x, coor_y, coor_size, coor_press;
 	int major, minor, orientation;
+	unsigned char event_type = GOODIX_GESTURE_UNKNOWN;
 
-	coor_x = le16_to_cpup((__le16 *)event->gesture_data.data);
-	coor_y = le16_to_cpup((__le16 *)(event->gesture_data.data + 2));
-	coor_size = le16_to_cpup((__le16 *)(event->gesture_data.data + 4));
-	coor_press = event->gesture_data.data[6];
-	major = le16_to_cpup((__le16 *)(event->gesture_data.data + 7));
-	minor = le16_to_cpup((__le16 *)(event->gesture_data.data + 9));
-	orientation = (s8)event->gesture_data.data[11];
+	mutex_lock(&cd->gesture_data_lock);
 
-	switch (event->gesture_data.gesture_type) {
+	coor_x = le16_to_cpup((__le16 *)cd->gesture_data.data);
+	coor_y = le16_to_cpup((__le16 *)(cd->gesture_data.data + 2));
+	coor_size = le16_to_cpup((__le16 *)(cd->gesture_data.data + 4));
+	coor_press = cd->gesture_data.data[6];
+	major = le16_to_cpup((__le16 *)(cd->gesture_data.data + 7));
+	minor = le16_to_cpup((__le16 *)(cd->gesture_data.data + 9));
+	orientation = (s8)cd->gesture_data.data[11];
+	event_type = cd->gesture_data.event_type;
+
+	mutex_unlock(&cd->gesture_data_lock);
+
+	switch (event_type) {
 	case GOODIX_GESTURE_SINGLE_TAP:
 		if (cd->gesture_type & GESTURE_SINGLE_TAP) {
 			ts_info("get SINGLE-TAP gesture");
@@ -240,7 +249,7 @@ int goodix_ts_report_gesture(struct goodix_ts_core *cd, struct goodix_ts_event *
 		}
 		break;
 	default:
-		ts_err("not support gesture type[%02X]", event->gesture_data.gesture_type);
+		ts_err("not support gesture type[%02X]", event_type);
 		break;
 	}
 
