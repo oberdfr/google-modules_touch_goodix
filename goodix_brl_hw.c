@@ -1072,12 +1072,14 @@ static void goodix_parse_pen(
 
 static int goodix_update_heatmap(struct goodix_ts_core *cd, u8 *event_data)
 {
+	struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
 	struct goodix_ic_info_misc *misc = &cd->ic_info.misc;
 	int tx = cd->ic_info.parm.drv_num;
 	int rx = cd->ic_info.parm.sen_num;
 	int mutual_struct_len = misc->mutual_struct_len;
 	struct goodix_mutual_data *mutual_data;
 	struct goodix_self_sensing_data *self_sensing_data;
+	int ret = 0;
 
 	/*
 	 * Memory map of event data
@@ -1099,10 +1101,32 @@ static int goodix_update_heatmap(struct goodix_ts_core *cd, u8 *event_data)
 	mutual_data = (struct goodix_mutual_data *)mutual_head;
 	self_sensing_data =
 		(struct goodix_self_sensing_data *)(mutual_head + mutual_struct_len);
+
+	/*
+	 * If touch IC can't support frame data mode, the driver need to send
+	 * additional commands to read mutual-sensing and self-sensing data.
+	 */
+	if (cd->bus->sub_ic_type == IC_TYPE_SUB_GT7986) {
+		ret = hw_ops->read(cd, misc->mutual_diffdata_addr,
+			(u8 *)mutual_data, tx * rx * 2);
+		if (ret) {
+			ts_debug("failed to read mutual data");
+			goto exit;
+		}
+
+		ret = hw_ops->read(cd, misc->self_diffdata_addr,
+			(u8 *)self_sensing_data, (tx + rx) * 2);
+		if (ret) {
+			ts_debug("failed to read self data");
+			goto exit;
+		}
+	}
+
 	goodix_rotate_abcd2cbad(tx, rx, mutual_data->data, cd->mutual_data);
 	memcpy(cd->self_sensing_data, self_sensing_data->data, (tx + rx) * 2);
 
-	return 0;
+exit:
+	return ret;
 }
 
 static int goodix_touch_handler(struct goodix_ts_core *cd,
@@ -1216,7 +1240,7 @@ static int brl_event_handler(struct goodix_ts_core *cd,
     // read done
 	hw_ops->after_event_handler(cd);
 
-	if (cd->heatmap_buffer) {
+	if (cd->heatmap_buffer && cd->bus->sub_ic_type != IC_TYPE_SUB_GT7986) {
 		offset = 248 + misc->frame_data_head_len +
 		misc->fw_attr_len + misc->fw_log_len + 8;
 		memcpy(cd->heatmap_diff, &pre_buf[offset], tx * rx * 2);
