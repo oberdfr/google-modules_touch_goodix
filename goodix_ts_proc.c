@@ -95,7 +95,7 @@ const static char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 #define GRIP_FUNC 3
 
 #define SHORT_SIZE 150
-#define LARGE_SIZE (10 * 1024)
+#define LARGE_SIZE (15 * 1024)
 #define HUGE_SIZE  (100 * 1024)
 static char wbuf[SHORT_SIZE];
 static char *rbuf;
@@ -1935,6 +1935,13 @@ static int goodix_open_test(struct goodix_ts_core *cd)
 	temp_cmd.cmd = 0x90;
 	temp_cmd.data[0] = 0x84;
 	temp_cmd.len = 5;
+	if (cd->bus->sub_ic_type == IC_TYPE_SUB_GT7986) {
+		raw_addr = cd->ic_info.misc.mutual_rawdata_addr;
+		sync_addr = cd->ic_info.misc.touch_data_addr;
+		temp_cmd.cmd = 0x01;
+		temp_cmd.len = 4;
+	}
+
 	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
 	if (ret < 0) {
 		ts_err("send rawdata cmd failed");
@@ -2041,6 +2048,13 @@ static int goodix_self_open_test(struct goodix_ts_core *cd)
 	temp_cmd.cmd = 0x90;
 	temp_cmd.data[0] = 0x84;
 	temp_cmd.len = 5;
+	if (cd->bus->sub_ic_type == IC_TYPE_SUB_GT7986) {
+		raw_addr = cd->ic_info.misc.self_rawdata_addr;
+		sync_addr = cd->ic_info.misc.touch_data_addr;
+		temp_cmd.cmd = 0x01;
+		temp_cmd.len = 4;
+	}
+
 	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
 	if (ret < 0) {
 		ts_err("send rawdata cmd failed");
@@ -2119,7 +2133,14 @@ static int goodix_noise_test(struct goodix_ts_core *cd)
 	temp_cmd.cmd = 0x90;
 	temp_cmd.data[0] = 0x82;
 	temp_cmd.len = 5;
+	if (cd->bus->sub_ic_type == IC_TYPE_SUB_GT7986) {
+		raw_addr = cd->ic_info.misc.mutual_diffdata_addr;
+		sync_addr = cd->ic_info.misc.touch_data_addr;
+		temp_cmd.cmd = 0x01;
+		temp_cmd.len = 4;
+	}
 	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
+
 	if (ret < 0) {
 		ts_err("send rawdata cmd failed");
 		goto exit;
@@ -2606,6 +2627,25 @@ static int get_cap_data(struct goodix_ts_core *cd, uint8_t *type)
 	temp_cmd.cmd = 0x90;
 	temp_cmd.len = 5;
 
+	if (cd->bus->sub_ic_type == IC_TYPE_SUB_GT7986) {
+		if (strstr(type, CMD_GET_BASEDATA))
+			mutual_addr = cd->ic_info.misc.mutual_refdata_addr;
+		else if (strstr(type, CMD_GET_RAWDATA))
+			mutual_addr = cd->ic_info.misc.mutual_rawdata_addr;
+		else if (strstr(type, CMD_GET_DIFFDATA))
+			mutual_addr = cd->ic_info.misc.mutual_diffdata_addr;
+		else if (strstr(type, CMD_GET_SELF_BASEDATA))
+			self_addr = cd->ic_info.misc.self_refdata_addr;
+		else if (strstr(type, CMD_GET_SELF_RAWDATA))
+			self_addr = cd->ic_info.misc.self_rawdata_addr;
+		else if (strstr(type, CMD_GET_SELF_DIFFDATA))
+			self_addr = cd->ic_info.misc.self_diffdata_addr;
+
+		flag_addr = cd->ic_info.misc.touch_data_addr;
+		temp_cmd.cmd = 0x01;
+		temp_cmd.len = 4;
+	}
+
 	ret = cd->hw_ops->send_cmd(cd, &temp_cmd);
 	if (ret < 0) {
 		ts_err("report rawdata failed, exit!");
@@ -2679,6 +2719,10 @@ exit:
 	temp_cmd.cmd = 0x90;
 	temp_cmd.data[0] = 0;
 	temp_cmd.len = 5;
+	if (cd->bus->sub_ic_type == IC_TYPE_SUB_GT7986) {
+		temp_cmd.cmd = 0;
+		temp_cmd.len = 4;
+	}
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 	/* clean touch event flag */
 	val = 0;
@@ -3118,7 +3162,9 @@ static void goodix_set_heatmap(struct goodix_ts_core *cd, int val)
 		temp_cmd.cmd = 0xC9;
 		temp_cmd.data[0] = 1;
 	}
-	cd->hw_ops->send_cmd(cd, &temp_cmd);
+	// no need to do anything for GT7986
+	if (cd->bus->sub_ic_type != IC_TYPE_SUB_GT7986)
+		cd->hw_ops->send_cmd(cd, &temp_cmd);
 	cd->hw_ops->irq_enable(cd, true);
 }
 
@@ -3858,6 +3904,9 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_NOISE_TEST, strlen(CMD_NOISE_TEST))) {
+		int tx = cd->ic_info.parm.drv_num;
+		int rx = cd->ic_info.parm.sen_num;
+
 		token = strsep(&p, ",");
 		if (!token || !p) {
 			ts_err("%s: invalid cmd param", CMD_NOISE_TEST);
@@ -3868,7 +3917,14 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 			goto exit;
 		}
 		noise_data_cnt = cmd_val;
-		rbuf = malloc_proc_buffer(noise_data_cnt * 13000);
+		/*
+		 * [GOOG]
+		 * Change the size based on the channel number(tx * rx) for
+		 * output (raw + data) and markup text with format "%5d,".
+		 */
+		//rbuf = malloc_proc_buffer(noise_data_cnt * 30000);
+		rbuf = malloc_proc_buffer(noise_data_cnt * tx * rx * 6 * 3);
+		/*~[GOOG]*/
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
 			goto exit;
@@ -4041,7 +4097,7 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 		 * Change the size based on the channel number(tx * rx) for
 		 * output (raw + data) and markup text with format "%5d,".
 		 */
-		//rbuf = malloc_proc_buffer(raw_data_cnt * 13000);
+		//rbuf = malloc_proc_buffer(raw_data_cnt * 30000);
 		rbuf = malloc_proc_buffer(raw_data_cnt * tx * rx * 6 * 3);
 		/*~[GOOG]*/
 		if (!rbuf) {

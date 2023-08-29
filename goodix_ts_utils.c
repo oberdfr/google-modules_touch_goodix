@@ -198,6 +198,9 @@ int goodix_get_ic_type(
 		if (strstr(ic_name, "ga687x")) {
 			bus_inf->sub_ic_type = IC_TYPE_SUB_B2;
 			ts_info("sub ic type is brl-b2");
+		} else if (strstr(ic_name, "gt7986")) {
+			bus_inf->sub_ic_type = IC_TYPE_SUB_GT7986;
+			ts_info("sub ic type is GT7986");
 		}
 		return 0;
 	}
