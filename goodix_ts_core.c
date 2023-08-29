@@ -2776,6 +2776,11 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
  * The total read size for SPI is `touch_frame_size` + 8 bytes(SPI prefix header).
  * Therefore, `touch_frame_package` will need to allocate 8 extra bytes for SPI I/O.
  */
+	if (cd->bus->sub_ic_type == IC_TYPE_SUB_GT7986) {
+		touch_frame_size = misc->touch_data_head_len +
+			misc->point_struct_len * GOODIX_MAX_TOUCH + 2;
+	}
+
 	cd->touch_frame_size = touch_frame_size;
 	cd->touch_frame_package =
 		devm_kzalloc(&cd->pdev->dev, touch_frame_size + 8, GFP_KERNEL);
