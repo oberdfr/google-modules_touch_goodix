@@ -3975,7 +3975,10 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 		}
 		mutex_lock(&cd->cmd_lock);
 		usleep_range(6000, 6100);
-		ret = cd->hw_ops->read_flash(cd, 0x1F301, &id, 1);
+		if (cd->bus->ic_type == IC_TYPE_BERLIN_B)
+			ret = cd->hw_ops->read_flash(cd, 0x3F301, &id, 1);
+		else
+			ret = cd->hw_ops->read_flash(cd, 0x1F301, &id, 1);
 		mutex_unlock(&cd->cmd_lock);
 		if (ret < 0)
 			index = sprintf(rbuf, "%s: NG\n", CMD_GET_PACKAGE_ID);
@@ -3986,6 +3989,8 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	}
 
 	if (!strncmp(p, CMD_GET_MCU_ID, strlen(CMD_GET_MCU_ID))) {
+		if (cd->bus->ic_type == IC_TYPE_BERLIN_B)
+			goto exit;
 		rbuf = malloc_proc_buffer(SHORT_SIZE);
 		if (!rbuf) {
 			ts_err("failed to alloc rbuf");
