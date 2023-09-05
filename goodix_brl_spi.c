@@ -328,7 +328,7 @@ static int goodix_spi_probe(struct spi_device *spi)
 	struct goodix_device_resource *dev_res;
 	int ret = 0;
 
-	ts_info("goodix spi probe in");
+	ts_info("%s: goodix spi probe in", __func__);
 
 	/* init spi_device */
 	spi->mode = SPI_MODE_0;
