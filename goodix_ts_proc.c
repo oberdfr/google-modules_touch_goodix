@@ -3187,8 +3187,13 @@ static void goodix_get_self_compensation(struct goodix_ts_core *cd)
 	}
 
 	if (cd->bus->ic_type == IC_TYPE_BERLIN_B) {
+		/* exit idle firstly */
+		goodix_set_scan_mode(cd, 2);
+		msleep(20);
 		cd->hw_ops->read(cd, cd->ic_info.misc.auto_scan_cmd_addr, cfg,
 			(tx + rx) * 2);
+		/* restore default */
+		goodix_set_scan_mode(cd, 0);
 		index += sprintf(&rbuf[index], "Tx:");
 		for (i = 0; i < tx; i++) {
 			val = le16_to_cpup((__le16 *)&cfg[i * 2]);
