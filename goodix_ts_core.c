@@ -1052,6 +1052,15 @@ static int gti_ping(void *private_data, struct gti_ping_cmd *cmd)
 	return cd->hw_ops->ping(cd);
 }
 
+static int gti_calibrate(void *private_data, struct gti_calibrate_cmd *cmd)
+{
+	(void)private_data;
+
+	/* Return successful calibration since there is nothing to do. */
+	cmd->result = GTI_CALIBRATE_RESULT_DONE;
+	return 0;
+}
+
 static int gti_selftest(void *private_data, struct gti_selftest_cmd *cmd)
 {
 	struct goodix_ts_core *cd = private_data;
@@ -2713,6 +2722,7 @@ int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	options->get_irq_mode = gti_get_irq_mode;
 	options->reset = gti_reset;
 	options->ping = gti_ping;
+	options->calibrate = gti_calibrate;
 	options->selftest = gti_selftest;
 	options->get_context_driver = gti_get_context_driver;
 	options->set_report_rate = gti_set_report_rate;
