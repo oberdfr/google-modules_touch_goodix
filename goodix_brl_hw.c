@@ -1924,15 +1924,21 @@ static int brl_flash_read(struct goodix_ts_core *cd, u32 addr, u8 *buf, int len)
 	u8 *tmp_buf;
 	u32 buffer_addr = cd->ic_info.misc.fw_buffer_addr;
 	uint32_t checksum = 0;
+	uint32_t read_len;
 	flash_head_info_t head_info;
 	u8 *p = (u8 *)&head_info.address;
 
-	tmp_buf = kzalloc(len + sizeof(flash_head_info_t), GFP_KERNEL);
+	if ((len % 2) != 0)
+		read_len = len + 1; // if odd number, must +1
+	else
+		read_len = len;
+
+	tmp_buf = kzalloc(read_len + sizeof(flash_head_info_t), GFP_KERNEL);
 	if (!tmp_buf)
 		return -ENOMEM;
 
 	head_info.address = cpu_to_le32(addr);
-	head_info.length = cpu_to_le32(len);
+	head_info.length = cpu_to_le32(read_len);
 	for (i = 0; i < 8; i += 2)
 		checksum += p[i] | (p[i + 1] << 8);
 	head_info.checksum = checksum;
@@ -1959,15 +1965,15 @@ static int brl_flash_read(struct goodix_ts_core *cd, u32 addr, u8 *buf, int len)
 	}
 
 	ret = cd->hw_ops->read(
-		cd, buffer_addr, tmp_buf, len + sizeof(flash_head_info_t));
+		cd, buffer_addr, tmp_buf, read_len + sizeof(flash_head_info_t));
 	if (ret < 0) {
 		ts_err("failed read data len %lu",
-			len + sizeof(flash_head_info_t));
+			read_len + sizeof(flash_head_info_t));
 		goto read_end;
 	}
 
 	checksum = 0;
-	for (i = 0; i < len + sizeof(flash_head_info_t) - 4; i += 2)
+	for (i = 0; i < read_len + sizeof(flash_head_info_t) - 4; i += 2)
 		checksum += tmp_buf[4 + i] | (tmp_buf[5 + i] << 8);
 
 	if (checksum != le32_to_cpup((__le32 *)tmp_buf)) {
