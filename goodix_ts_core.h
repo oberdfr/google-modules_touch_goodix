@@ -57,7 +57,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.2.10"
+#define GOODIX_DRIVER_VERSION "v1.3.3"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -65,7 +65,7 @@
 #define GOODIX_CFG_MAX_SIZE 4096
 #define GOODIX_FW_MAX_SIEZE (300 * 1024)
 #define GOODIX_MAX_STR_LABEL_LEN 36
-#define GOODIX_MAX_FRAMEDATA_LEN 3600
+#define GOODIX_MAX_FRAMEDATA_LEN 4800
 #define GOODIX_GESTURE_DATA_LEN 16
 #define GOODIX_REQUEST_DATA_LEN 16
 #define GOODIX_NORMAL_RESET_DELAY_MS_DEFAULT 100 /* [GOOG]*/
@@ -79,8 +79,8 @@
 /*
  * [GOOG]
  * Don't hardcode for tx/rx num.
-#define GOODIX_MAX_DRV_NUM 32
-#define GOODIX_MAX_SEN_NUM 39
+#define GOODIX_MAX_DRV_NUM 52
+#define GOODIX_MAX_SEN_NUM 75
  */
 #define GOODIX_GESTURE_UNKNOWN 0x00
 #define GOODIX_GESTURE_DOUBLE_TAP 0xCC
@@ -135,6 +135,7 @@ enum IC_TYPE_ID {
  */
 enum BERLIN_B_SUB_ID {
 	IC_TYPE_SUB_B2 = (IC_TYPE_BERLIN_B << 8) | 0x2,
+	IC_TYPE_SUB_GT7986 = (IC_TYPE_BERLIN_B << 8) | 0x03,
 };
 
 enum GOODIX_IC_CONFIG_TYPE {
@@ -823,13 +824,13 @@ struct fw_update_ctrl {
 	struct mutex mutex;
 	int initialized;
 	char fw_name[GOODIX_MAX_STR_LABEL_LEN];
+	u32 cfg_id;
 	int mode;
 	enum update_status status;
 	int spend_time;
 
 	struct firmware_data fw_data;
 	struct goodix_ic_config *ic_config;
-	struct goodix_ic_config one_binary_cfg;
 	struct goodix_ts_core *core_data;
 	struct update_info_t *update_info;
 	struct kobject *kobj;
