@@ -3171,6 +3171,7 @@ static void goodix_set_heatmap(struct goodix_ts_core *cd, int val)
 static void goodix_get_self_compensation(struct goodix_ts_core *cd)
 {
 	u8 *cfg;
+	u8 *cfg_buf;
 	int len;
 	int cfg_num;
 	int sub_cfg_index;
@@ -3180,8 +3181,8 @@ static void goodix_get_self_compensation(struct goodix_ts_core *cd)
 	s16 val;
 	int i, j;
 
-	cfg = kzalloc(GOODIX_CFG_MAX_SIZE, GFP_KERNEL);
-	if (cfg == NULL) {
+	cfg_buf = kzalloc(GOODIX_CFG_MAX_SIZE, GFP_KERNEL);
+	if (cfg_buf == NULL) {
 		ts_err("failed to alloc cfg buffer");
 		return;
 	}
@@ -3190,30 +3191,31 @@ static void goodix_get_self_compensation(struct goodix_ts_core *cd)
 		/* exit idle firstly */
 		goodix_set_scan_mode(cd, 2);
 		msleep(20);
-		cd->hw_ops->read(cd, cd->ic_info.misc.auto_scan_cmd_addr, cfg,
+		cd->hw_ops->read(cd, cd->ic_info.misc.auto_scan_cmd_addr, cfg_buf,
 			(tx + rx) * 2);
 		/* restore default */
 		goodix_set_scan_mode(cd, 0);
 		index += sprintf(&rbuf[index], "Tx:");
 		for (i = 0; i < tx; i++) {
-			val = le16_to_cpup((__le16 *)&cfg[i * 2]);
+			val = le16_to_cpup((__le16 *)&cfg_buf[i * 2]);
 			index += sprintf(&rbuf[index], "%d,", val);
 		}
 		index += sprintf(&rbuf[index], "\nRx:");
 		for (i = 0; i < rx; i++) {
-			val = le16_to_cpup((__le16 *)&cfg[tx * 2 + i * 2]);
+			val = le16_to_cpup((__le16 *)&cfg_buf[tx * 2 + i * 2]);
 			index += sprintf(&rbuf[index], "%d,", val);
 		}
 		index += sprintf(&rbuf[index], "\n");
 		goto exit_free;
 	}
 
-	len = cd->hw_ops->read_config(cd, cfg, GOODIX_CFG_MAX_SIZE);
+	len = cd->hw_ops->read_config(cd, cfg_buf, GOODIX_CFG_MAX_SIZE);
 	if (len < 0) {
 		ts_err("read config failed");
 		goto exit_free;
 	}
 
+	cfg = cfg_buf;
 	cfg_num = cfg[61];
 	cfg += 64;
 	for (i = 0; i < cfg_num; i++) {
@@ -3240,7 +3242,7 @@ static void goodix_get_self_compensation(struct goodix_ts_core *cd)
 		cfg += (sub_cfg_len + 2);
 	}
 exit_free:
-	kfree(cfg);
+	kfree(cfg_buf);
 }
 
 static void goodix_set_report_rate(struct goodix_ts_core *cd, int rate)
