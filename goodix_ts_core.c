@@ -711,14 +711,14 @@ static void goodix_ts_sysfs_exit(struct goodix_ts_core *core_data)
 
 /* [GOOG] */
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_MOTION_FILTER)
-int set_continuously_report_enabled(struct device *dev, bool enabled)
+static int set_continuously_report_enabled(struct device *dev, bool enabled)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
 	return cd->hw_ops->set_continuously_report_enabled(cd, enabled);
 }
 #endif
 
-int get_fw_version(struct device *dev, char *buf, size_t buf_size)
+static int get_fw_version(struct device *dev, char *buf, size_t buf_size)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
 	int ret = 0;
@@ -734,43 +734,43 @@ int get_fw_version(struct device *dev, char *buf, size_t buf_size)
 	return ret;
 }
 
-int get_irq_enabled(struct device *dev)
+static int get_irq_enabled(struct device *dev)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
 	return atomic_read(&cd->irq_enabled);
 }
 
-int set_irq_enabled(struct device *dev, bool enabled)
+static int set_irq_enabled(struct device *dev, bool enabled)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
 	return cd->hw_ops->irq_enable(cd, enabled);
 }
 
-bool is_scan_mode_supported(struct device *dev, enum scan_mode mode)
+static bool is_scan_mode_supported(struct device *dev, enum scan_mode mode)
 {
 	return mode == SCAN_MODE_AUTO || mode == SCAN_MODE_NORMAL_ACTIVE ||
 	       mode == SCAN_MODE_NORMAL_IDLE;
 }
 
-int ping(struct device *dev)
+static int ping(struct device *dev)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
 	return cd->hw_ops->ping(cd);
 }
 
-int hardware_reset(struct device *dev)
+static int hardware_reset(struct device *dev)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
 	return cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 }
 
-int set_scan_mode(struct device *dev, enum scan_mode mode)
+static int set_scan_mode(struct device *dev, enum scan_mode mode)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
 	return cd->hw_ops->set_scan_mode(cd, (enum raw_scan_mode)mode);
 }
 
-int set_sensing_enabled(struct device *dev, bool enabled)
+static int set_sensing_enabled(struct device *dev, bool enabled)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
 	if (enabled) {
@@ -789,13 +789,13 @@ int set_sensing_enabled(struct device *dev, bool enabled)
 
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 #if IS_ENABLED(CONFIG_GTI_PM)
-bool get_wake_lock_state(struct device *dev, enum gti_pm_wakelock_type type)
+static bool get_wake_lock_state(struct device *dev, enum gti_pm_wakelock_type type)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
 	return goog_pm_wake_check_locked(cd->gti, type);
 }
 
-int set_wake_lock_state(
+static int set_wake_lock_state(
 	struct device *dev, enum gti_pm_wakelock_type type, bool locked)
 {
 	struct goodix_ts_core *cd = dev_get_drvdata(dev);
@@ -2001,7 +2001,7 @@ static int goodix_ts_power_init(struct goodix_ts_core *core_data)
  * @core_data: pointer to touch core data
  * return: 0 ok, <0 failed
  */
-int goodix_ts_power_on(struct goodix_ts_core *cd)
+static int goodix_ts_power_on(struct goodix_ts_core *cd)
 {
 	int ret = 0;
 
@@ -2022,7 +2022,7 @@ int goodix_ts_power_on(struct goodix_ts_core *cd)
  * @core_data: pointer to touch core data
  * return: 0 ok, <0 failed
  */
-int goodix_ts_power_off(struct goodix_ts_core *cd)
+static int goodix_ts_power_off(struct goodix_ts_core *cd)
 {
 	int ret;
 
@@ -2259,7 +2259,7 @@ static int goodix_ts_pen_dev_config(struct goodix_ts_core *core_data)
 	return 0;
 }
 
-void goodix_ts_input_dev_remove(struct goodix_ts_core *core_data)
+static void goodix_ts_input_dev_remove(struct goodix_ts_core *core_data)
 {
 	if (!core_data->input_dev)
 		return;
@@ -2267,7 +2267,7 @@ void goodix_ts_input_dev_remove(struct goodix_ts_core *core_data)
 	core_data->input_dev = NULL;
 }
 
-void goodix_ts_pen_dev_remove(struct goodix_ts_core *core_data)
+static void goodix_ts_pen_dev_remove(struct goodix_ts_core *core_data)
 {
 	if (!core_data->pen_dev)
 		return;
@@ -2366,7 +2366,7 @@ void goodix_ts_esd_off(struct goodix_ts_core *cd)
 /**
  * goodix_ts_esd_init - initialize esd protection
  */
-int goodix_ts_esd_init(struct goodix_ts_core *cd)
+static int goodix_ts_esd_init(struct goodix_ts_core *cd)
 {
 	struct goodix_ic_info_misc *misc = &cd->ic_info.misc;
 	struct goodix_ts_esd *ts_esd = &cd->ts_esd;
@@ -2384,7 +2384,7 @@ int goodix_ts_esd_init(struct goodix_ts_core *cd)
 	return 0;
 }
 
-void goodix_ts_esd_uninit(struct goodix_ts_core *cd)
+static void goodix_ts_esd_uninit(struct goodix_ts_core *cd)
 {
 	struct goodix_ts_esd *ts_esd = &cd->ts_esd;
 	if (atomic_read(&ts_esd->esd_on))
@@ -2564,7 +2564,7 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
  * goodix_ts_fb_notifier_callback - Framebuffer notifier callback
  * Called by kernel during framebuffer blanck/unblank phrase
  */
-int goodix_ts_fb_notifier_callback(
+static int goodix_ts_fb_notifier_callback(
 	struct notifier_block *self, unsigned long event, void *data)
 {
 	struct goodix_ts_core *core_data =
@@ -2611,7 +2611,7 @@ static int goodix_ts_pm_resume(struct device *dev)
 #endif
 #endif
 
-int goodix_ts_stage2_init(struct goodix_ts_core *cd)
+static int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 {
 	int ret;
 	int tx = cd->ic_info.parm.drv_num;

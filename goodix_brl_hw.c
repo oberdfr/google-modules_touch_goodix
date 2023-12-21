@@ -259,7 +259,7 @@ power_off:
 	return ret;
 }
 
-int brl_suspend(struct goodix_ts_core *cd)
+static int brl_suspend(struct goodix_ts_core *cd)
 {
 	u32 cmd_reg = cd->ic_info.misc.cmd_addr;
 	u8 sleep_cmd[] = { 0x00, 0x00, 0x05, 0xC4, 0x01, 0xCA, 0x00 };
@@ -267,7 +267,7 @@ int brl_suspend(struct goodix_ts_core *cd)
 	return cd->hw_ops->write(cd, cmd_reg, sleep_cmd, sizeof(sleep_cmd));
 }
 
-int brl_resume(struct goodix_ts_core *cd)
+static int brl_resume(struct goodix_ts_core *cd)
 {
 	u32 cmd_reg = cd->ic_info.misc.cmd_addr;
 	u8 cmd_buf[] = { 0x00, 0x00, 0x04, 0xA7, 0xAB, 0x00 };
@@ -277,7 +277,7 @@ int brl_resume(struct goodix_ts_core *cd)
 
 #define GOODIX_GESTURE_CMD_BA 0x12
 #define GOODIX_GESTURE_CMD 0xA6
-int brl_gesture(struct goodix_ts_core *cd, int gesture_type)
+static int brl_gesture(struct goodix_ts_core *cd, int gesture_type)
 {
 	struct goodix_ts_cmd cmd;
 	u8 val;
@@ -1521,7 +1521,7 @@ exit:
 }
 
 #define GOODIX_GET_SCAN_MODE_ADDR 0x10219
-int brl_get_scan_mode(struct goodix_ts_core *cd, enum raw_scan_mode* mode)
+static int brl_get_scan_mode(struct goodix_ts_core *cd, enum raw_scan_mode* mode)
 {
 	int ret = 0;
 
@@ -1535,7 +1535,7 @@ int brl_get_scan_mode(struct goodix_ts_core *cd, enum raw_scan_mode* mode)
 }
 
 #define GOODIX_CMD_SET_SCAN_MODE 0x9F
-int brl_set_scan_mode(struct goodix_ts_core *cd, enum raw_scan_mode mode)
+static int brl_set_scan_mode(struct goodix_ts_core *cd, enum raw_scan_mode mode)
 {
 	struct goodix_ts_cmd cmd;
 	static const uint8_t raw_scan_mode_cmd_codes[] ={
@@ -1558,7 +1558,7 @@ int brl_set_scan_mode(struct goodix_ts_core *cd, enum raw_scan_mode mode)
 }
 
 #define GOODIX_CMD_SET_CONTINUOUSLY_REPORT_ENABLED 0xC6
-int brl_set_continuously_report_enabled(struct goodix_ts_core *cd, bool enabled)
+static int brl_set_continuously_report_enabled(struct goodix_ts_core *cd, bool enabled)
 {
 	struct goodix_ts_cmd cmd;
 
@@ -1573,7 +1573,7 @@ int brl_set_continuously_report_enabled(struct goodix_ts_core *cd, bool enabled)
 
 #define GOODIX_CMD_SET_FRAMEDATA_ENABLED 0x90
 #define GOODIX_CMD_SET_HEATMAP_ENABLED 0xC9
-int brl_set_heatmap_enabled(struct goodix_ts_core *cd, bool enabled)
+static int brl_set_heatmap_enabled(struct goodix_ts_core *cd, bool enabled)
 {
 	struct goodix_ts_cmd cmd;
 	int ret = 0;
@@ -1598,7 +1598,7 @@ int brl_set_heatmap_enabled(struct goodix_ts_core *cd, bool enabled)
 #define CUSTOM_MODE_MASK_GRIP 0x04
 #define CUSTOM_MODE_MASK_SCREEN_PROTECTOR 0x40
 #define CUSTOM_MODE_MASK_COORD_FILTER 0x80
-int brl_set_palm_enabled(struct goodix_ts_core *cd, bool enabled)
+static int brl_set_palm_enabled(struct goodix_ts_core *cd, bool enabled)
 {
 	struct goodix_ts_cmd cmd = { 0 };
 
@@ -1613,7 +1613,7 @@ int brl_set_palm_enabled(struct goodix_ts_core *cd, bool enabled)
 	return 0;
 }
 
-int brl_get_palm_enabled(struct goodix_ts_core *cd, bool *enabled)
+static int brl_get_palm_enabled(struct goodix_ts_core *cd, bool *enabled)
 {
 	int ret = 0;
 	u8 val;
@@ -1628,7 +1628,7 @@ int brl_get_palm_enabled(struct goodix_ts_core *cd, bool *enabled)
 	return ret;
 }
 
-int brl_set_grip_enabled(struct goodix_ts_core *cd, bool enabled)
+static int brl_set_grip_enabled(struct goodix_ts_core *cd, bool enabled)
 {
 	struct goodix_ts_cmd cmd = { 0 };
 
@@ -1643,7 +1643,7 @@ int brl_set_grip_enabled(struct goodix_ts_core *cd, bool enabled)
 	return 0;
 }
 
-int brl_get_grip_enabled(struct goodix_ts_core *cd, bool *enabled)
+static int brl_get_grip_enabled(struct goodix_ts_core *cd, bool *enabled)
 {
 	int ret = 0;
 	u8 val;
@@ -1659,7 +1659,7 @@ int brl_get_grip_enabled(struct goodix_ts_core *cd, bool *enabled)
 }
 
 #define GOODIX_CMD_SET_SCREEN_PROTECTOR_ENABLED 0x72
-int brl_set_screen_protector_mode_enabled(
+static int brl_set_screen_protector_mode_enabled(
 	struct goodix_ts_core *cd, bool enabled)
 {
 	struct goodix_ts_cmd cmd = { 0 };
@@ -1674,7 +1674,7 @@ int brl_set_screen_protector_mode_enabled(
 	return 0;
 }
 
-int brl_get_screen_protector_mode_enabled(
+static int brl_get_screen_protector_mode_enabled(
 	struct goodix_ts_core *cd, bool *enabled)
 {
 	int ret = 0;
@@ -1691,7 +1691,7 @@ int brl_get_screen_protector_mode_enabled(
 	return ret;
 }
 
-int brl_get_mutual_data(struct goodix_ts_core *cd, enum frame_data_type type)
+static int brl_get_mutual_data(struct goodix_ts_core *cd, enum frame_data_type type)
 {
 	int ret = 0;
 	u8 val;
@@ -1753,7 +1753,7 @@ exit:
 	return ret;
 }
 
-int brl_get_self_sensing_data(struct goodix_ts_core *cd, enum frame_data_type type)
+static int brl_get_self_sensing_data(struct goodix_ts_core *cd, enum frame_data_type type)
 {
 	int ret = 0;
 	u8 val;

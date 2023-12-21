@@ -7,10 +7,10 @@ kernel_module(
     srcs = glob([
         "**/*.c",
         "**/*.h",
-        "Kbuild",
     ]) + [
-        "//private/google-modules/touch/common:headers",
+        "Kbuild",
         "//private/google-modules/soc/gs:gs_soc_headers",
+        "//private/google-modules/touch/common:headers",
     ],
     outs = [
         "goodix_brl_touch.ko",
