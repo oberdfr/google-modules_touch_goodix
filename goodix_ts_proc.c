@@ -54,6 +54,7 @@
 #define CMD_SET_FREQ_INDEX "set_freq_index"
 #define CMD_DISABLE_FILTER "disable_filter"
 #define CMD_GET_IM_DATA "get_im_data"
+#define CMD_SET_HSYNC_SPEED "set_hsync_speed"
 
 const static char *cmd_list[] = { CMD_FW_UPDATE, CMD_AUTO_TEST, CMD_OPEN_TEST,
 	CMD_STYLUS_RAW_TEST, CMD_STYLUS_OSC_TEST,
@@ -3519,6 +3520,18 @@ static void goodix_disable_coor_filter(struct goodix_ts_core *cd, int val)
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 }
 
+static void goodix_set_hsync_speed(struct goodix_ts_core *cd, int val)
+{
+	struct goodix_ts_cmd temp_cmd;
+
+	index = sprintf(rbuf, "hsync mode: %s\n",
+		(val == 0) ? "high speed" : "normal speed");
+	temp_cmd.len = 5;
+	temp_cmd.cmd = 0xF2;
+	temp_cmd.data[0] = (val == 0) ? 0 : 1;
+	cd->hw_ops->send_cmd(cd, &temp_cmd);
+}
+
 static ssize_t driver_test_write(struct file *file, const char __user *buf,
 				     size_t count, loff_t *pos)
 {
@@ -4495,6 +4508,23 @@ static ssize_t driver_test_write(struct file *file, const char __user *buf,
 	if (!strncmp(p, CMD_GET_IM_DATA, strlen(CMD_GET_IM_DATA))) {
 		rbuf = malloc_proc_buffer(LARGE_SIZE);
 		goodix_get_im_rawdata(cd);
+		goto exit;
+	}
+
+	if (!strncmp(p, CMD_SET_HSYNC_SPEED, strlen(CMD_SET_HSYNC_SPEED))) {
+		rbuf = malloc_proc_buffer(SHORT_SIZE);
+		token = strsep(&p, ",");
+		if (!token || !p) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_HSYNC_SPEED);
+			goto exit;
+		}
+		if (kstrtos32(p, 10, &cmd_val)) {
+			index = sprintf(rbuf, "%s: invalid cmd param\n",
+				CMD_SET_HSYNC_SPEED);
+			goto exit;
+		}
+		goodix_set_hsync_speed(cd, cmd_val);
 		goto exit;
 	}
 
