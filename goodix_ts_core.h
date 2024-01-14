@@ -791,6 +791,7 @@ struct goodix_ts_hw_ops {
 	int (*set_report_rate)(struct goodix_ts_core *cd, u32 rate);
 	u32 (*get_ms_data_addr)(struct goodix_ts_core *cd, enum frame_data_type type);
 	u32 (*get_ss_data_addr)(struct goodix_ts_core *cd, enum frame_data_type type);
+	int (*set_panel_speed_mode)(struct goodix_ts_core *cd, bool is_high_speed);
 /*~[GOOG] */
 };
 

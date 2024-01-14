@@ -1083,6 +1083,14 @@ static int gti_set_report_rate(void *private_data,
 	return cd->hw_ops->set_report_rate(cd, cmd->setting);
 }
 
+static int gti_set_panel_speed_mode(void *private_data,
+	struct gti_panel_speed_mode_cmd *cmd)
+{
+	struct goodix_ts_core *cd = private_data;
+	return cd->hw_ops->set_panel_speed_mode(cd,
+		cmd->setting == GTI_PANEL_SPEED_MODE_HS);
+}
+
 #endif
 /*~[GOOG] */
 
@@ -2726,6 +2734,7 @@ static int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	options->selftest = gti_selftest;
 	options->get_context_driver = gti_get_context_driver;
 	options->set_report_rate = gti_set_report_rate;
+	options->set_panel_speed_mode = gti_set_panel_speed_mode;
 	options->post_irq_thread_fn = goodix_ts_post_threadirq_func;
 
 	cd->gti = goog_touch_interface_probe(

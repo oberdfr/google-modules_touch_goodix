@@ -2009,6 +2009,25 @@ static u32 brl_get_ss_data_addr(struct goodix_ts_core *cd, enum frame_data_type 
 	return addr;
 }
 
+#define GOODIX_CMD_SET_PANEL_SPEED_MODE 0xF2
+static int brl_set_panel_speed_mode(
+	struct goodix_ts_core *cd, bool is_high_speed)
+{
+	struct goodix_ts_cmd cmd = { 0 };
+	int ret = 0;
+
+	cmd.cmd = GOODIX_CMD_SET_PANEL_SPEED_MODE;
+	cmd.len = 5;
+	cmd.data[0] = is_high_speed ? 0 : 1;
+
+	ret = cd->hw_ops->send_cmd(cd, &cmd);
+	if (ret != 0)
+		ts_err("failed to set panel speed mode: %s",
+			is_high_speed ? "HS" : "NS");
+
+	return ret;
+}
+
 static struct goodix_ts_hw_ops brl_hw_ops = {
 	.power_on = brl_power_on,
 	.resume = brl_resume,
@@ -2051,6 +2070,7 @@ static struct goodix_ts_hw_ops brl_hw_ops = {
 	.set_report_rate = brl_set_report_rate,
 	.get_ms_data_addr = brl_get_ms_data_addr,
 	.get_ss_data_addr = brl_get_ss_data_addr,
+	.set_panel_speed_mode = brl_set_panel_speed_mode,
 /*~[GOOG] */
 };
 
