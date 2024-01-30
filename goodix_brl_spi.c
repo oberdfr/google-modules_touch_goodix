@@ -36,9 +36,6 @@
 #define SPI_WRITE_FLAG 0xF0
 #define SPI_READ_FLAG 0xF1
 
-static struct platform_device *goodix_pdev;
-struct goodix_bus_interface goodix_spi_bus;
-
 /**
  * goodix_spi_read_bra- read device register through spi bus
  * @dev: pointer to device data
@@ -51,6 +48,8 @@ static int goodix_spi_read_bra(struct device *dev, unsigned int addr,
 	unsigned char *data, unsigned int len)
 {
 	struct spi_device *spi = to_spi_device(dev);
+	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	struct goodix_bus_interface *bus = cd->bus;
 	u8 *rx_buf = NULL;
 	u8 *tx_buf = NULL;
 	struct spi_transfer xfers;
@@ -58,12 +57,12 @@ static int goodix_spi_read_bra(struct device *dev, unsigned int addr,
 	int ret = 0;
 	int buf_len = SPI_READ_PREFIX_LEN + len;
 
-	mutex_lock(&goodix_spi_bus.mutex);
+	mutex_lock(&bus->mutex);
 
 	if (buf_len <= SPI_PREALLOC_RX_BUF_SIZE &&
 		buf_len <= SPI_PREALLOC_TX_BUF_SIZE) {
-		rx_buf = goodix_spi_bus.rx_buf;
-		tx_buf = goodix_spi_bus.tx_buf;
+		rx_buf = bus->rx_buf;
+		tx_buf = bus->tx_buf;
 		memset(tx_buf, 0, buf_len);
 	} else {
 		rx_buf = kzalloc(buf_len, GFP_KERNEL);
@@ -108,13 +107,13 @@ static int goodix_spi_read_bra(struct device *dev, unsigned int addr,
 	memcpy(data, &rx_buf[SPI_READ_PREFIX_LEN], len);
 
 err_spi_transfer:
-	if (tx_buf != goodix_spi_bus.tx_buf)
+	if (tx_buf != bus->tx_buf)
 		kfree(tx_buf);
 err_alloc_tx_buf:
-	if (rx_buf != goodix_spi_bus.rx_buf)
+	if (rx_buf != bus->rx_buf)
 		kfree(rx_buf);
 err_alloc_rx_buf:
-	mutex_unlock(&goodix_spi_bus.mutex);
+	mutex_unlock(&bus->mutex);
 	return ret;
 }
 
@@ -122,6 +121,8 @@ static int goodix_spi_read(struct device *dev, unsigned int addr,
 	unsigned char *data, unsigned int len)
 {
 	struct spi_device *spi = to_spi_device(dev);
+	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	struct goodix_bus_interface *bus = cd->bus;
 	u8 *rx_buf = NULL;
 	u8 *tx_buf = NULL;
 	struct spi_transfer xfers;
@@ -129,16 +130,15 @@ static int goodix_spi_read(struct device *dev, unsigned int addr,
 	int ret = 0;
 	int buf_len = SPI_READ_PREFIX_LEN - 1 + len;
 
-	if (goodix_spi_bus.dma_mode_enabled && buf_len >= 64) {
+	if (bus->dma_mode_enabled && buf_len >= 64)
 		buf_len = ALIGN(buf_len, 4);
-	}
 
-	mutex_lock(&goodix_spi_bus.mutex);
+	mutex_lock(&bus->mutex);
 
 	if (buf_len <= SPI_PREALLOC_RX_BUF_SIZE &&
 		buf_len <= SPI_PREALLOC_TX_BUF_SIZE) {
-		rx_buf = goodix_spi_bus.rx_buf;
-		tx_buf = goodix_spi_bus.tx_buf;
+		rx_buf = bus->rx_buf;
+		tx_buf = bus->tx_buf;
 		memset(tx_buf, 0, buf_len);
 	} else {
 		rx_buf = kzalloc(buf_len, GFP_KERNEL);
@@ -173,7 +173,8 @@ static int goodix_spi_read(struct device *dev, unsigned int addr,
 	xfers.rx_buf = rx_buf;
 	xfers.len = buf_len;
 	xfers.cs_change = 0;
-	if (goodix_spi_bus.dma_mode_enabled) xfers.bits_per_word = buf_len >= 64 ? 32 : 8;
+	if (bus->dma_mode_enabled)
+		xfers.bits_per_word = buf_len >= 64 ? 32 : 8;
 	spi_message_add_tail(&xfers, &spi_msg);
 	ret = spi_sync(spi, &spi_msg);
 	if (ret < 0) {
@@ -183,32 +184,37 @@ static int goodix_spi_read(struct device *dev, unsigned int addr,
 	memcpy(data, &rx_buf[SPI_READ_PREFIX_LEN - 1], len);
 
 err_spi_transfer:
-	if (tx_buf != goodix_spi_bus.tx_buf)
+	if (tx_buf != bus->tx_buf)
 		kfree(tx_buf);
 err_alloc_tx_buf:
-	if (rx_buf != goodix_spi_bus.rx_buf)
+	if (rx_buf != bus->rx_buf)
 		kfree(rx_buf);
 err_alloc_rx_buf:
-	mutex_unlock(&goodix_spi_bus.mutex);
+	mutex_unlock(&bus->mutex);
 	return ret;
 }
 
+/* [GOOG]
+ * This SPI transaction will direct read into `struct goodix_rx_package`.
+ * And, the package are comprised of `SPI prefix header` + `data`.
+ */
 static int goodix_spi_read_fast(struct device *dev, unsigned int addr,
 	struct goodix_rx_package *package, unsigned int len)
 {
 	struct spi_device *spi = to_spi_device(dev);
+	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	struct goodix_bus_interface *bus = cd->bus;
 	u8 *tx_buf = NULL;
 	struct spi_transfer xfers;
 	struct spi_message spi_msg;
 	int ret = 0;
 	int buf_len = SPI_READ_PREFIX_LEN - 1 + len;
 
-	if (goodix_spi_bus.dma_mode_enabled && buf_len >= 64) {
+	if (bus->dma_mode_enabled && buf_len >= 64)
 		buf_len = ALIGN(buf_len, 4);
-	}
 
 	if (buf_len <= SPI_PREALLOC_TX_BUF_SIZE) {
-		tx_buf = goodix_spi_bus.tx_buf;
+		tx_buf = bus->tx_buf;
 	} else {
 		tx_buf = kzalloc(buf_len, GFP_KERNEL);
 		if (!tx_buf) {
@@ -220,7 +226,7 @@ static int goodix_spi_read_fast(struct device *dev, unsigned int addr,
 	spi_message_init(&spi_msg);
 	memset(&xfers, 0, sizeof(xfers));
 
-	mutex_lock(&goodix_spi_bus.mutex);
+	mutex_lock(&bus->mutex);
 
 	/*spi_read tx_buf format: 0xF1 + addr(4bytes) + data*/
 	tx_buf[0] = SPI_READ_FLAG;
@@ -236,12 +242,13 @@ static int goodix_spi_read_fast(struct device *dev, unsigned int addr,
 	xfers.rx_buf = package->header;
 	xfers.len = buf_len;
 	xfers.cs_change = 0;
-	if (goodix_spi_bus.dma_mode_enabled) xfers.bits_per_word = buf_len >= 64 ? 32 : 8;
+	if (bus->dma_mode_enabled)
+		xfers.bits_per_word = buf_len >= 64 ? 32 : 8;
 	spi_message_add_tail(&xfers, &spi_msg);
 
 	ret = spi_sync(spi, &spi_msg);
 
-	mutex_unlock(&goodix_spi_bus.mutex);
+	mutex_unlock(&bus->mutex);
 
 	if (ret < 0) {
 		ts_err("spi transfer error:%d", ret);
@@ -249,7 +256,7 @@ static int goodix_spi_read_fast(struct device *dev, unsigned int addr,
 	}
 
 err_spi_transfer:
-	if (tx_buf != goodix_spi_bus.tx_buf)
+	if (tx_buf != bus->tx_buf)
 		kfree(tx_buf);
 	return ret;
 }
@@ -266,18 +273,19 @@ static int goodix_spi_write(struct device *dev, unsigned int addr,
 	unsigned char *data, unsigned int len)
 {
 	struct spi_device *spi = to_spi_device(dev);
+	struct goodix_ts_core *cd = dev_get_drvdata(dev);
+	struct goodix_bus_interface *bus = cd->bus;
 	u8 *tx_buf = NULL;
 	struct spi_transfer xfers;
 	struct spi_message spi_msg;
 	int ret = 0;
 	int buf_len = SPI_WRITE_PREFIX_LEN + len;
 
-	if (goodix_spi_bus.dma_mode_enabled && buf_len >= 64) {
+	if (bus->dma_mode_enabled && buf_len >= 64)
 		buf_len = ALIGN(buf_len, 4);
-	}
 
 	if (buf_len <= SPI_PREALLOC_TX_BUF_SIZE) {
-		tx_buf = goodix_spi_bus.tx_buf;
+		tx_buf = bus->tx_buf;
 	} else {
 		tx_buf = kzalloc(buf_len, GFP_KERNEL);
 		if (!tx_buf) {
@@ -289,7 +297,7 @@ static int goodix_spi_write(struct device *dev, unsigned int addr,
 	spi_message_init(&spi_msg);
 	memset(&xfers, 0, sizeof(xfers));
 
-	mutex_lock(&goodix_spi_bus.mutex);
+	mutex_lock(&bus->mutex);
 
 	tx_buf[0] = SPI_WRITE_FLAG;
 	tx_buf[1] = (addr >> 24) & 0xFF;
@@ -300,28 +308,24 @@ static int goodix_spi_write(struct device *dev, unsigned int addr,
 	xfers.tx_buf = tx_buf;
 	xfers.len = buf_len;
 	xfers.cs_change = 0;
-	if (goodix_spi_bus.dma_mode_enabled) xfers.bits_per_word = buf_len >= 64 ? 32 : 8;
+	if (bus->dma_mode_enabled)
+		xfers.bits_per_word = buf_len >= 64 ? 32 : 8;
 	spi_message_add_tail(&xfers, &spi_msg);
 	ret = spi_sync(spi, &spi_msg);
 
-	mutex_unlock(&goodix_spi_bus.mutex);
+	mutex_unlock(&bus->mutex);
 
 	if (ret < 0)
 		ts_err("spi transfer error:%d", ret);
 
-	if (tx_buf != goodix_spi_bus.tx_buf)
+	if (tx_buf != bus->tx_buf)
 		kfree(tx_buf);
 	return ret;
 }
 
-static void goodix_pdev_release(struct device *dev)
-{
-	ts_info("goodix pdev released");
-	kfree(goodix_pdev);
-}
-
 static int goodix_spi_probe(struct spi_device *spi)
 {
+	struct goodix_device_resource *dev_res;
 	int ret = 0;
 
 	ts_info("%s: goodix spi probe in", __func__);
@@ -329,7 +333,7 @@ static int goodix_spi_probe(struct spi_device *spi)
 	/* init spi_device */
 	spi->mode = SPI_MODE_0;
 	spi->bits_per_word = 8;
-	spi->rt = true;
+	spi->rt = true; /* [GOOG] */
 
 	ret = spi_setup(spi);
 	if (ret) {
@@ -337,83 +341,75 @@ static int goodix_spi_probe(struct spi_device *spi)
 		return ret;
 	}
 
-	/* get ic type */
-	ret = goodix_get_ic_type(spi->dev.of_node, &goodix_spi_bus);
-	if (ret < 0)
-		return ret;
-
-	goodix_spi_bus.bus_type = GOODIX_BUS_TYPE_SPI;
-	goodix_spi_bus.dev = &spi->dev;
-	if (goodix_spi_bus.ic_type == IC_TYPE_BERLIN_A) {
-		goodix_spi_bus.read = goodix_spi_read_bra;
-	} else {
-		goodix_spi_bus.read = goodix_spi_read;
-		goodix_spi_bus.read_fast = goodix_spi_read_fast;
-	}
-	goodix_spi_bus.write = goodix_spi_write;
-
-	goodix_spi_bus.rx_buf = kzalloc(SPI_PREALLOC_RX_BUF_SIZE, GFP_KERNEL);
-	if (!goodix_spi_bus.rx_buf) {
+	dev_res = kzalloc(sizeof(*dev_res), GFP_KERNEL);
+	if (!dev_res)
 		return -ENOMEM;
-	}
 
-	goodix_spi_bus.tx_buf = kzalloc(SPI_PREALLOC_TX_BUF_SIZE, GFP_KERNEL);
-	if (!goodix_spi_bus.tx_buf) {
+	/* get ic type */
+	ret = goodix_get_ic_type(spi->dev.of_node, &dev_res->bus);
+	if (ret < 0)
+		goto err_get_ic_type;
+
+	dev_res->bus.bus_type = GOODIX_BUS_TYPE_SPI;
+	dev_res->bus.dev = &spi->dev;
+	if (dev_res->bus.ic_type == IC_TYPE_BERLIN_A) {
+		dev_res->bus.read = goodix_spi_read_bra;
+	} else {
+		dev_res->bus.read = goodix_spi_read;
+		dev_res->bus.read_fast = goodix_spi_read_fast;
+	}
+	dev_res->bus.write = goodix_spi_write;
+
+/* [GOOG]
+ * Move goodix_device_register() after `dev_res->bus.dev` assigned.
+ * This will help to set the `struct device *dev` early.
+ */
+	goodix_device_register(dev_res);
+
+	dev_res->bus.rx_buf = kzalloc(SPI_PREALLOC_RX_BUF_SIZE, GFP_KERNEL);
+	dev_res->bus.tx_buf = kzalloc(SPI_PREALLOC_TX_BUF_SIZE, GFP_KERNEL);
+	if (!dev_res->bus.rx_buf || !dev_res->bus.tx_buf) {
 		ret = -ENOMEM;
-		goto err_alloc_tx_buf;
+		goto err_pdev;
 	}
+/*~[GOOG] */
+	mutex_init(&dev_res->bus.mutex);
 
-	mutex_init(&goodix_spi_bus.mutex);
-
-	goodix_spi_bus.dma_mode_enabled = false;
+	dev_res->bus.dma_mode_enabled = false;
 #ifdef CONFIG_GOOG_TOUCH_INTERFACE
-	goodix_spi_bus.dma_mode_enabled = goog_check_spi_dma_enabled(spi);
-	ts_info("dma_mode: %s\n", goodix_spi_bus.dma_mode_enabled ? "enabled" : "disabled");
+	dev_res->bus.dma_mode_enabled = goog_check_spi_dma_enabled(spi);
+	ts_info("dma_mode: %s\n", dev_res->bus.dma_mode_enabled ? "enabled" : "disabled");
 #endif
 
-	/* ts core device */
-	goodix_pdev = kzalloc(sizeof(struct platform_device), GFP_KERNEL);
-	if (!goodix_pdev) {
-		ret = -ENOMEM;
-		goto err_alloc_pdev;
-	}
-
-	goodix_pdev->name = GOODIX_CORE_DRIVER_NAME;
-	goodix_pdev->id = 0;
-	goodix_pdev->num_resources = 0;
-	/*
-	 * you can find this platform dev in
-	 * /sys/devices/platform/goodix_ts.0
-	 * goodix_pdev->dev.parent = &client->dev;
-	 */
-	goodix_pdev->dev.platform_data = &goodix_spi_bus;
-	goodix_pdev->dev.release = goodix_pdev_release;
+	// platform device init
+	dev_res->pdev.name = GOODIX_CORE_DRIVER_NAME;
+	dev_res->pdev.id = dev_res->id;
+	dev_res->pdev.num_resources = 0;
 
 	/* register platform device, then the goodix_ts_core
 	 * module will probe the touch device.
 	 */
-	ret = platform_device_register(goodix_pdev);
+	ret = platform_device_register(&dev_res->pdev);
 	if (ret) {
 		ts_err("failed register goodix platform device, %d", ret);
-		goto err_register_platform_device;
+		goto err_pdev;
 	}
 	ts_info("spi probe out");
 	return 0;
 
-err_register_platform_device:
-	kfree(goodix_pdev);
-err_alloc_pdev:
-	kfree(goodix_spi_bus.tx_buf);
-err_alloc_tx_buf:
-	kfree(goodix_spi_bus.rx_buf);
-
+err_pdev:
+	kfree(dev_res->bus.rx_buf);
+	kfree(dev_res->bus.tx_buf);
+err_get_ic_type:
+	kfree(dev_res);
 	ts_info("spi probe out, %d", ret);
 	return ret;
 }
 
 static void goodix_spi_remove(struct spi_device *spi)
 {
-	platform_device_unregister(goodix_pdev);
+	/* goodix_ts_core_exit() will unregister device(s)
+	   platform_device_unregister(dev_res->pdev); */
 }
 
 #ifdef CONFIG_OF
@@ -423,6 +419,9 @@ static const struct of_device_id spi_matches[] = {
 	},
 	{
 		.compatible = "goodix,brl-b",
+	},
+	{
+		.compatible = "goodix,brl-b,gt7986",
 	},
 	{
 		.compatible = "goodix,brl-d",
