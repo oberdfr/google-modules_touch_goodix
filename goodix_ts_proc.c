@@ -4592,7 +4592,7 @@ static const struct file_operations cmd_list_ops = {
 #endif
 
 /* [GOOG] */
-int driver_test_selftest(struct goodix_ts_core *cd, char *buf)
+int driver_test_selftest(struct goodix_ts_core *cd, char *buf, bool *result)
 {
 	int ret = 0;
 
@@ -4619,6 +4619,12 @@ int driver_test_selftest(struct goodix_ts_core *cd, char *buf)
 	ts_test->item[GTP_SELFCAP_TEST] = true;
 	ts_test->item[GTP_SHORT_TEST] = true;
 	goodix_auto_test(cd, true);
+
+	*result = ts_test->result[GTP_CAP_TEST] &&
+		ts_test->result[GTP_DELTA_TEST] &&
+		ts_test->result[GTP_SHORT_TEST] &&
+		ts_test->result[GTP_NOISE_TEST] &&
+		ts_test->result[GTP_SELFCAP_TEST];
 
 	strlcpy(buf, rbuf, PAGE_SIZE);
 

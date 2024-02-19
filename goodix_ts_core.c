@@ -1064,9 +1064,13 @@ static int gti_calibrate(void *private_data, struct gti_calibrate_cmd *cmd)
 static int gti_selftest(void *private_data, struct gti_selftest_cmd *cmd)
 {
 	struct goodix_ts_core *cd = private_data;
+	int ret = 0;
+	bool test_result = true;
 
-	cmd->result = GTI_SELFTEST_RESULT_DONE;
-	return driver_test_selftest(cd, cmd->buffer);
+	ret =  driver_test_selftest(cd, cmd->buffer, &test_result);
+	cmd->result = test_result ? GTI_SELFTEST_RESULT_DONE :
+		GTI_SELFTEST_RESULT_FAIL;
+	return ret;
 }
 
 static int gti_get_context_driver(void *private_data,
