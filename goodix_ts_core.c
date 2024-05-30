@@ -1497,6 +1497,9 @@ static int goodix_parse_dt(
 	board_data->pen_enable =
 		of_property_read_bool(node, "goodix,pen-enable");
 
+	board_data->noise_test_disable_cmd =
+		of_property_read_bool(node, "goodix,noise-test-disable-cmd");
+
 	ts_info("[DT]x:%d, y:%d, w:%d, p:%d sleep_enable:%d pen_enable:%d",
 		board_data->panel_max_x, board_data->panel_max_y,
 		board_data->panel_max_w, board_data->panel_max_p,
