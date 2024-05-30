@@ -2913,7 +2913,7 @@ static int goodix_send_ic_config(struct goodix_ts_core *cd, int type)
  */
 static int goodix_later_init_thread(void *data)
 {
-	int ret, i;
+	int ret;
 	int update_flag = UPDATE_MODE_BLOCK | UPDATE_MODE_SRC_REQUEST;
 	struct goodix_ts_core *cd = data;
 	struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
@@ -2980,10 +2980,6 @@ uninit_fw:
 err_out:
 	ts_err("stage2 init failed");
 	cd->init_stage = CORE_INIT_FAIL;
-	for (i = 0; i < GOODIX_MAX_CONFIG_GROUP; i++) {
-		kfree(cd->ic_configs[i]);
-		cd->ic_configs[i] = NULL;
-	}
 	return ret;
 }
 
