@@ -57,7 +57,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.3.7"
+#define GOODIX_DRIVER_VERSION "v1.3.8"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -378,6 +378,7 @@ struct goodix_ts_board_data {
 	bool pen_enable;
 	bool sleep_enable;
 	bool use_one_binary;
+	bool noise_test_disable_cmd;
 	char fw_name[GOODIX_MAX_STR_LABEL_LEN];
 	char cfg_bin_name[GOODIX_MAX_STR_LABEL_LEN];
 	char test_limits_name[GOODIX_MAX_STR_LABEL_LEN];
