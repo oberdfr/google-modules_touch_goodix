@@ -1800,17 +1800,20 @@ void goodix_ts_report_status(struct goodix_ts_core *core_data,
 		return;
 	}
 
-	ts_info("grip_change[%d] noise_lv_change[%d] palm_change[%d] soft_reset[%d] base_update[%d] hop_change[%d] water_change[%d]",
-		st->grip_change, st->noise_lv_change, st->palm_change,
-		st->soft_reset, st->base_update, st->hop_change,
-		st->water_change);
-	ts_info("water_status[%d] before_factorA[%d] after_factorA[%d]" \
-		" base_update_type[0x%x] soft_reset_type[0x%x] palm_status[%d]" \
-		" noise_lv[%d] grip_type[%d] event_id[%d] clear_count1[%d]" \
-		" clear_count2[%d]", st->water_sta, st->before_factorA,
-		st->after_factorA, st->base_update_type, st->soft_reset_type,
-		st->palm_sta, st->noise_lv, st->grip_type, st->event_id,
-		ts_event->clear_count1, ts_event->clear_count2);
+	ts_info("others_change[%d] grip_change[%d] noise_lv_change[%d] palm_change[%d]"
+		"soft_reset[%d] base_update[%d] hop_change[%d] water_change[%d]",
+		st->others_change, st->grip_change, st->noise_lv_change,
+		st->palm_change, st->soft_reset, st->base_update,
+		st->hop_change, st->water_change);
+	ts_info("water_status[%d] before_factorA[%d] after_factorA[%d] base_update_type[0x%x]\n"
+		"soft_reset_type[0x%x] palm_status[%d] noise_lv[%d] grip_type[%d] \n"
+		"wireless_mode[%d] fw_sta[%x] sys_cmd[%x] fw_hs_ns[%x] hsync_err[%x] event_id[%d] \n"
+		"clear_count1[%d] clear_count2[%d]",
+		st->water_sta, st->before_factorA, st->after_factorA,
+		st->base_update_type, st->soft_reset_type, st->palm_sta,
+		st->noise_lv, st->grip_type, st->wireless_mode,
+		st->fw_sta, st->sys_cmd, st->fw_hs_ns, st->hsync_error,
+		st->event_id, ts_event->clear_count1, ts_event->clear_count2);
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 	if (st->soft_reset)
 		goog_notify_fw_status_changed(core_data->gti, GTI_FW_STATUS_RESET,

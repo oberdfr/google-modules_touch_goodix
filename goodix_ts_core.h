@@ -58,7 +58,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.3.9"
+#define GOODIX_DRIVER_VERSION "v1.3.10"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -420,6 +420,7 @@ struct goodix_status_data {
 	u8 palm_change : 1;
 	u8 noise_lv_change : 1;
 	u8 grip_change : 1;
+	u8 others_change : 1;
 	u8 water_sta;
 	u8 before_factorA;
 	u8 after_factorA;
@@ -428,7 +429,13 @@ struct goodix_status_data {
 	u8 palm_sta;
 	u8 noise_lv;
 	u8 grip_type;
-	u8 res[9];
+	u8 fold_sta; // open 1, folded 0
+	u8 wireless_mode;
+	u8 fw_sta : 2;
+	u8 sys_cmd : 2;
+	u8 fw_hs_ns : 2;
+	u8 hsync_error : 2;
+	u8 res[6];
 	u8 event_id;
 	u8 checksum;
 };
