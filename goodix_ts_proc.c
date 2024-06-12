@@ -56,6 +56,7 @@
 #define CMD_DISABLE_FILTER "disable_filter"
 #define CMD_GET_IM_DATA "get_im_data"
 #define CMD_SET_HSYNC_SPEED "set_hsync_speed"
+#define CMD_SET_WIRELESS_CHARGE "set_wireless_charge"
 
 struct cmd_handler {
 	const char *name;
@@ -1165,8 +1166,13 @@ static int driver_test_open(struct inode *inode, struct file *file)
 	if (ret)
 		return ret;
 	seq_file = (struct seq_file *)file->private_data;
-	if (seq_file)
+	if (seq_file) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0))
 		seq_file->private = pde_data(inode);
+#else
+		seq_file->private = PDE_DATA(inode);
+#endif
+	}
 
 	mutex_lock(&goodix_devices.mutex);
 	return 0;
@@ -2267,13 +2273,13 @@ exit:
 
 static int goodix_noise_test(struct goodix_ts_core *cd)
 {
-	u8 *tmp_buf;
+	u8 *tmp_buf = NULL;
 	struct goodix_ts_cmd temp_cmd = {0};
 	int tx = cd->ic_info.parm.drv_num;
 	int rx = cd->ic_info.parm.sen_num;
 	u32 sync_addr = cd->ic_info.misc.frame_data_addr;
 	u32 raw_addr;
-	int ret;
+	int ret = 0;
 	int i, j;
 	s16 tmp_val;
 	u8 val;
@@ -4190,8 +4196,32 @@ static void goodix_set_hsync_speed(
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 }
 
-static struct cmd_handler cmd_handler_list[] = { { CMD_FW_UPDATE,
-							 goodix_force_update },
+static void goodix_set_wireless_charge(
+	struct goodix_ts_core *cd, int *buf, int bufsz)
+{
+	struct goodix_ts_cmd temp_cmd;
+
+	if (bufsz != 1) {
+		ts_err("invalid cmd size:%d", bufsz);
+		return;
+	}
+
+	rbuf = malloc_proc_buffer(SHORT_SIZE);
+	if (rbuf == NULL) {
+		ts_err("failed to alloc rbuf");
+		return;
+	}
+
+	index = sprintf(
+		rbuf, "%s wireless mode\n", (buf[0] == 0) ? "exit" : "enter");
+	temp_cmd.len = 5;
+	temp_cmd.cmd = 0xAF;
+	temp_cmd.data[0] = (buf[0] == 0) ? 0 : 1;
+	cd->hw_ops->send_cmd(cd, &temp_cmd);
+}
+
+static struct cmd_handler cmd_handler_list[] = {
+	{ CMD_FW_UPDATE, goodix_force_update },
 	{ CMD_AUTO_TEST, goodix_run_auto_test }, { CMD_STYLUS_RAW_TEST, NULL },
 	{ CMD_STYLUS_OSC_TEST, NULL }, { CMD_GET_STYLUS_DATA, NULL },
 	{ CMD_OPEN_TEST, goodix_run_open_test },
@@ -4238,7 +4268,9 @@ static struct cmd_handler cmd_handler_list[] = { { CMD_FW_UPDATE,
 	{ CMD_SET_FREQ_INDEX, goodix_set_freq_index },
 	{ CMD_DISABLE_FILTER, goodix_disable_coor_filter },
 	{ CMD_GET_IM_DATA, goodix_get_im_rawdata },
-	{ CMD_SET_HSYNC_SPEED, goodix_set_hsync_speed }, { NULL, NULL } };
+	{ CMD_SET_HSYNC_SPEED, goodix_set_hsync_speed },
+	{ CMD_SET_WIRELESS_CHARGE, goodix_set_wireless_charge }, { NULL, NULL }
+};
 
 static int split_string(char *str, char *cmd, int *param, int *param_len)
 {
