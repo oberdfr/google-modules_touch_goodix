@@ -2161,6 +2161,8 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 {
 	struct goodix_ts_board_data *ts_bdata = board_data(core_data);
 	struct input_dev *input_dev = NULL;
+	int max_x = ts_bdata->panel_max_x;
+	int max_y = ts_bdata->panel_max_y;
 	int dev_id = core_data->pdev->id;
 	int r;
 
@@ -2187,11 +2189,15 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 	set_bit(BTN_TOOL_FINGER, input_dev->keybit);
 	set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
 
+	if (core_data->ic_info.other.screen_max_x > 0 &&
+		core_data->ic_info.other.screen_max_y > 0) {
+		max_x = core_data->ic_info.other.screen_max_x;
+		max_y = core_data->ic_info.other.screen_max_y;
+	}
+
 	/* set input parameters */
-	input_set_abs_params(
-		input_dev, ABS_MT_POSITION_X, 0, ts_bdata->panel_max_x, 0, 0);
-	input_set_abs_params(
-		input_dev, ABS_MT_POSITION_Y, 0, ts_bdata->panel_max_y, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_POSITION_X, 0, max_x - 1, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_POSITION_Y, 0, max_y - 1, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_PRESSURE, 0, 255, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR, 0, ts_bdata->panel_max_y, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_TOUCH_MINOR, 0, ts_bdata->panel_max_x, 0, 0);

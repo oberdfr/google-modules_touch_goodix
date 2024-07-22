@@ -58,7 +58,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.3.10"
+#define GOODIX_DRIVER_VERSION "v1.3.11"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
@@ -292,12 +292,23 @@ struct goodix_ic_info_misc { /* other data */
 	u32 auto_scan_info_addr;
 };
 
+struct goodix_ic_info_other {
+	u16 normalize_k_version;
+	u32 irrigation_data_addr;
+	u32 algo_debug_data_addr;
+	u16 algo_debug_data_len;
+	u32 update_sync_data_addr;
+	u16 screen_max_x;
+	u16 screen_max_y;
+};
+
 struct goodix_ic_info {
 	u16 length;
 	struct goodix_ic_info_version version;
 	struct goodix_ic_info_feature feature;
 	struct goodix_ic_info_param parm;
 	struct goodix_ic_info_misc misc;
+	struct goodix_ic_info_other other;
 };
 
 struct goodix_frame_head {
