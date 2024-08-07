@@ -2169,6 +2169,7 @@ exit:
 	return ret;
 }
 
+#define SELF_RAWDATA_NG_RETRY 3
 static int goodix_self_open_test(struct goodix_ts_core *cd)
 {
 	u8 *tmp_buf;
@@ -2182,6 +2183,7 @@ static int goodix_self_open_test(struct goodix_ts_core *cd)
 	s16 tmp_val;
 	u8 val;
 	int retry;
+	int ng_rty = SELF_RAWDATA_NG_RETRY;
 
 	raw_addr = cd->ic_info.misc.frame_data_addr +
 		   cd->ic_info.misc.frame_data_head_len +
@@ -2192,6 +2194,7 @@ static int goodix_self_open_test(struct goodix_ts_core *cd)
 	if (tmp_buf == NULL)
 		return -ENOMEM;
 
+restart:
 	/* test prepare */
 	temp_cmd.cmd = 0x90;
 	temp_cmd.data[0] = 0x84;
@@ -2247,6 +2250,14 @@ static int goodix_self_open_test(struct goodix_ts_core *cd)
 			ts_test->result[GTP_SELFCAP_TEST] = TEST_NG;
 			ret = -EINVAL;
 		}
+	}
+
+	if (ts_test->result[GTP_SELFCAP_TEST] == TEST_NG && ng_rty > 0) {
+		ng_rty--;
+		cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
+		ts_info("self rawdata out of limit, retry:%d",
+			SELF_RAWDATA_NG_RETRY - ng_rty);
+		goto restart;
 	}
 
 exit:
@@ -2499,7 +2510,8 @@ static int goodix_auto_test(struct goodix_ts_core *cd, bool is_brief)
 
 	if (ts_test->item[GTP_NOISE_TEST]) {
 		for (i = 0; i < 3; i++) {
-			cd->hw_ops->send_cmd(cd, &temp_cmd);
+			if (!cd->board_data.noise_test_disable_cmd)
+				cd->hw_ops->send_cmd(cd, &temp_cmd);
 			ret = goodix_noise_test(cd);
 			cd->hw_ops->reset(cd, goodix_get_normal_reset_delay(cd));
 			if (ret != -EAGAIN)
