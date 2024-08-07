@@ -2984,6 +2984,10 @@ static void goodix_run_open_test(struct goodix_ts_core *cd, int *buf, int bufsz)
 		ts_err("invalid cmd size:%d", bufsz);
 		return;
 	}
+	if (buf[0] <= 0) {
+		ts_err("invalid input param:%d", buf[0]);
+		return;
+	}
 
 	raw_data_cnt = buf[0];
 	/*
@@ -3039,6 +3043,10 @@ static void goodix_run_noise_test(
 		ts_err("invalid cmd size:%d", bufsz);
 		return;
 	}
+	if (buf[0] <= 0) {
+		ts_err("invalid input param:%d", buf[0]);
+		return;
+	}
 	noise_data_cnt = buf[0];
 	/*
 	 * [GOOG]
@@ -3068,6 +3076,11 @@ static void goodix_run_auto_noise_test(
 		ts_err("invalid cmd size:%d", bufsz);
 		return;
 	}
+	if (buf[0] <= 0 || buf[1] <= 0) {
+		ts_err("invalid input param:%d,%d", buf[0], buf[1]);
+		return;
+	}
+
 	rbuf = malloc_proc_buffer(HUGE_SIZE);
 	if (rbuf == NULL) {
 		ts_err("failed to alloc rbuf");
