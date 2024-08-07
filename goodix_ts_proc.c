@@ -88,7 +88,7 @@ struct cmd_handler {
 #define WATER_FUNC 2
 #define GRIP_FUNC 3
 
-#define SHORT_SIZE 150
+#define SHORT_SIZE 512
 #define LARGE_SIZE (15 * 1024)
 #define HUGE_SIZE  (100 * 1024)
 static char wbuf[SHORT_SIZE];
@@ -3691,32 +3691,42 @@ static void goodix_get_config(struct goodix_ts_core *cd, int *buf, int bufsz)
 static void goodix_get_fw_status(struct goodix_ts_core *cd, int *buf, int bufsz)
 {
 	struct goodix_status_data status_data;
-	u8 val;
+	u8 val[2];
 
+	index = 0;
 	rbuf = malloc_proc_buffer(SHORT_SIZE);
 	if (rbuf == NULL) {
 		ts_err("failed to alloc rbuf");
 		return;
 	}
 
-	cd->hw_ops->read(cd, 0x1021A, &val, 1);
-	index += sprintf(
-		&rbuf[index], "coordfilter_status[%d] ", (val >> 7) & 0x01);
-	index += sprintf(
-		&rbuf[index], "set_highsense_mode[%d] ", (val >> 6) & 0x01);
-	index +=
-		sprintf(&rbuf[index], "set_noise_mode[%d] ", (val >> 4) & 0x03);
-	index +=
-		sprintf(&rbuf[index], "set_water_mode[%d] ", (val >> 3) & 0x01);
-	index += sprintf(&rbuf[index], "set_grip_mode[%d] ", (val >> 2) & 0x01);
-	index += sprintf(&rbuf[index], "set_palm_mode[%d] ", (val >> 1) & 0x01);
-	index += sprintf(
-		&rbuf[index], "set_heatmap_mode[%d]\n", (val >> 0) & 0x01);
+	cd->hw_ops->read(cd, 0x1021A, val, sizeof(val));
+	index += scnprintf(&rbuf[index], SHORT_SIZE - index,
+		"coordfilter_status[%d] ", (val[0] >> 7) & 0x01);
+	index += scnprintf(&rbuf[index], SHORT_SIZE - index,
+		"set_highsense_mode[%d] ", (val[0] >> 6) & 0x01);
+	index += scnprintf(&rbuf[index], SHORT_SIZE - index,
+		"set_noise_mode[%d] ", (val[0] >> 4) & 0x03);
+	index += scnprintf(&rbuf[index], SHORT_SIZE - index,
+		"set_water_mode[%d] ", (val[0] >> 3) & 0x01);
+	index += scnprintf(&rbuf[index], SHORT_SIZE - index,
+		"set_grip_mode[%d] ", (val[0] >> 2) & 0x01);
+	index += scnprintf(&rbuf[index], SHORT_SIZE - index,
+		"set_palm_mode[%d] ", (val[0] >> 1) & 0x01);
+	index += scnprintf(&rbuf[index], SHORT_SIZE - index,
+		"set_heatmap_mode[%d]\n", (val[0] >> 0) & 0x01);
+	index += scnprintf(&rbuf[index], SHORT_SIZE - index,
+		"fw_ns/hs[%d]", (val[1] >> 0) & 0x01);
+	index += scnprintf(&rbuf[index], SHORT_SIZE - index,
+		"wireless mode[%d]", (val[1] >> 1) & 0x01);
 
 	cd->hw_ops->read(cd, 0x1021C, (u8 *)&status_data, sizeof(status_data));
-	index += sprintf(&rbuf[index], "water[%d] ", status_data.water_sta);
-	index += sprintf(&rbuf[index], "palm[%d] ", status_data.palm_sta);
-	index += sprintf(&rbuf[index], "noise_lv[%d]\n", status_data.noise_lv);
+	index += scnprintf(&rbuf[index], SHORT_SIZE - index,
+		"water[%d] ", status_data.water_sta);
+	index += scnprintf(&rbuf[index], SHORT_SIZE - index,
+		"palm[%d] ", status_data.palm_sta);
+	index += scnprintf(&rbuf[index], SHORT_SIZE - index,
+		"noise_lv[%d]\n", status_data.noise_lv);
 }
 
 static void goodix_set_highsense_mode(
