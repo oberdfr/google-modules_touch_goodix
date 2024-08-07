@@ -57,6 +57,7 @@
 #define CMD_GET_IM_DATA "get_im_data"
 #define CMD_SET_HSYNC_SPEED "set_hsync_speed"
 #define CMD_SET_WIRELESS_CHARGE "set_wireless_charge"
+#define CMD_SET_CONTINUE_HEATMAP "set_continue_heatmap"
 
 struct cmd_handler {
 	const char *name;
@@ -4230,6 +4231,25 @@ static void goodix_set_wireless_charge(
 	cd->hw_ops->send_cmd(cd, &temp_cmd);
 }
 
+static void goodix_set_continue_heatmap(
+	struct goodix_ts_core *cd, int *buf, int bufsz)
+{
+	struct goodix_ts_cmd temp_cmd;
+
+	if (bufsz != 1) {
+		ts_err("invalid cmd size:%d", bufsz);
+		return;
+	}
+
+	rbuf = malloc_proc_buffer(SHORT_SIZE);
+	index = sprintf(rbuf, "%s continue heatmap\n",
+		(buf[0] == 0) ? "disable" : "enable");
+	temp_cmd.len = 5;
+	temp_cmd.cmd = 0xCC;
+	temp_cmd.data[0] = (buf[0] == 0) ? 0 : 1;
+	cd->hw_ops->send_cmd(cd, &temp_cmd);
+}
+
 static struct cmd_handler cmd_handler_list[] = {
 	{ CMD_FW_UPDATE, goodix_force_update },
 	{ CMD_AUTO_TEST, goodix_run_auto_test }, { CMD_STYLUS_RAW_TEST, NULL },
@@ -4279,8 +4299,9 @@ static struct cmd_handler cmd_handler_list[] = {
 	{ CMD_DISABLE_FILTER, goodix_disable_coor_filter },
 	{ CMD_GET_IM_DATA, goodix_get_im_rawdata },
 	{ CMD_SET_HSYNC_SPEED, goodix_set_hsync_speed },
-	{ CMD_SET_WIRELESS_CHARGE, goodix_set_wireless_charge }, { NULL, NULL }
-};
+	{ CMD_SET_WIRELESS_CHARGE, goodix_set_wireless_charge },
+	{ CMD_SET_CONTINUE_HEATMAP, goodix_set_continue_heatmap },
+	{ NULL, NULL } };
 
 static int split_string(char *str, char *cmd, int *param, int *param_len)
 {
