@@ -33,6 +33,7 @@
 #include <linux/completion.h>
 #include <linux/of_irq.h>
 #include <drm/drm_panel.h>
+#include <linux/version.h>
 #if IS_ENABLED(CONFIG_OF)
 #include <linux/of_gpio.h>
 #include <linux/regulator/consumer.h>
@@ -57,7 +58,7 @@
 
 #define GOODIX_CORE_DRIVER_NAME "goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME "goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION "v1.3.8"
+#define GOODIX_DRIVER_VERSION "v1.3.9"
 #define GOODIX_MAX_TOUCH 10
 #define GOODIX_PEN_MAX_PRESSURE 4096
 #define GOODIX_MAX_PEN_KEY 2
